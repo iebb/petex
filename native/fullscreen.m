@@ -10,10 +10,12 @@ int main(void) {
   while (fgets(line,sizeof(line),stdin)) {
     @autoreleasepool {
       [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.005]];
-      int ignoredPID; double x,y,width,height; BOOL full=NO; BOOL locked=NO;
+      int ignoredPID; double x,y,width,height; BOOL full=NO;
+      NSDictionary *session=CFBridgingRelease(CGSessionCopyCurrentDictionary());
+      BOOL locked=[session[@"CGSSessionScreenIsLocked"] boolValue];
       if (sscanf(line,"%d %lf %lf %lf %lf",&ignoredPID,&x,&y,&width,&height)==5) {
         NSRunningApplication *front=[NSWorkspace sharedWorkspace].frontmostApplication;
-        pid_t frontPID=front.processIdentifier;locked=[front.bundleIdentifier isEqualToString:@"com.apple.loginwindow"];
+        pid_t frontPID=front.processIdentifier;
         if(frontPID && frontPID!=ignoredPID) {
           NSArray *windows=CFBridgingRelease(CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly|kCGWindowListExcludeDesktopElements,kCGNullWindowID));
           for (NSDictionary *window in windows) {
