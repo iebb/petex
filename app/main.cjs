@@ -135,7 +135,7 @@ async function exportLibrary(kind) {
   const pet=selectedPet(),id=kind==='pet'?pet.id:null;
   if(id&&pet.builtin)throw new Error(t('builtinExport'));
   const name=id?pet.displayName:'Petex-library';
-  const fileName=name.replace(/[<>:"/\\|?*\x00-\x1f]/g,'-').replace(/[. ]+$/,'').slice(0,70)||'Petex-pet';
+  const fileName=name.replace(/[<>:"/\\|?*\x00-\x1f]/g,'-').replace(/\.\.+/g,'-').replace(/[. ]+$/,'').slice(0,70)||'Petex-pet';
   const result=await dialog.showSaveDialog(settingsWindow||petWindow,{title:t(id?'exportTitle':'backupTitle',{name:pet.displayName}),defaultPath:fileName+'.zip',filters:[{name:t('zipFiles'),extensions:['zip']}]});
   if(result.canceled||!result.filePath)return false;
   const actualParent=await fs.realpath(path.dirname(result.filePath));
