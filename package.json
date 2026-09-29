@@ -19,7 +19,11 @@
     "verify:package": "node scripts/verify-package.cjs",
     "test:packaged": "node scripts/test-package.cjs",
     "dist:mas": "electron-builder --mac mas --arm64 --publish never",
-    "version:ci": "node scripts/version.cjs"
+    "version:ci": "node scripts/version.cjs",
+    "build:native": "node scripts/build-native.cjs",
+    "prestart": "npm run build:native",
+    "predev": "npm run build:native",
+    "pretest:desktop": "npm run build:native"
   },
   "build": {
     "appId": "app.pedex.desktop",
@@ -61,7 +65,8 @@
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "asarUnpack": [
       "**/node_modules/sharp/**/*",
-      "**/node_modules/@img/**/*"
+      "**/node_modules/@img/**/*",
+      "app/native/**/*"
     ],
     "beforePack": "scripts/before-pack.cjs",
     "mas": {
@@ -78,7 +83,13 @@
       "sign": "scripts/sign-mas.cjs"
     },
     "electronLanguages": [
-      "en-US"
+      "en-GB",
+      "en-US",
+      "zh-CN",
+      "zh-TW",
+      "ja",
+      "es",
+      "fr"
     ]
   },
   "dependencies": {

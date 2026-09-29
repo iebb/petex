@@ -9,3 +9,5 @@ The GitHub button opens the project website in your browser, where GitHub's priv
 Questions or support: https://github.com/iebb/petex/issues
 
 Published by Kitta Ltd. Updated September 2026.
+
+Optional fullscreen hiding checks the foreground window's size locally. It does not capture the screen, read window titles, or send this information anywhere. Exporting pets writes their artwork and metadata to the ZIP file you choose; backups are not uploaded by Petex.

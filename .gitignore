@@ -3,3 +3,4 @@ release/
 test-results/
 playwright-report/
 .DS_Store
+app/native/

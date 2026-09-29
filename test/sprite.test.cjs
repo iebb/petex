@@ -21,15 +21,30 @@ test('random animations use every non-idle imported row and only supported built
 });
 test('random animations wait, complete their loops, and avoid consecutive repeats',async()=>{
   const {RandomAnimations,ANIMATIONS}=await sprite;const behavior=new RandomAnimations(()=>0);const pet={builtin:false};
-  assert.equal(behavior.next(pet,0,true),null);assert.equal(behavior.next(pet,11999,true),null);
-  const first=behavior.next(pet,12000,true);assert.equal(first.name,'waving');assert.equal(first.duration,ANIMATIONS.waving.durations.reduce((a,b)=>a+b,0));
-  assert.equal(behavior.next(pet,12001,true),null);
+  assert.equal(behavior.next(pet,0,true),null);assert.equal(behavior.next(pet,44999,true),null);
+  const first=behavior.next(pet,45000,true);assert.equal(first.name,'waving');assert.equal(first.duration,ANIMATIONS.waving.durations.reduce((a,b)=>a+b,0));
+  assert.equal(behavior.next(pet,45001,true),null);
   const second=behavior.next(pet,behavior.nextAt,true);assert.notEqual(second.name,first.name);
 });
 test('pause, hiding, dragging and manual actions postpone random playback without catch-up',async()=>{
   const {RandomAnimations}=await sprite;const behavior=new RandomAnimations(()=>0);const pet={builtin:false};
-  behavior.next(pet,0,true);assert.equal(behavior.next(pet,13000,true,true),null);assert.equal(behavior.nextAt,25000);
+  behavior.next(pet,0,true);assert.equal(behavior.next(pet,13000,true,true),null);assert.equal(behavior.nextAt,58000);
   assert.equal(behavior.next(pet,24000,false),null);assert.equal(behavior.nextAt,null);
-  assert.equal(behavior.next(pet,90000,true),null);assert.equal(behavior.nextAt,102000);
-  behavior.reset();assert.equal(behavior.next(pet,110000,true),null);assert.equal(behavior.nextAt,122000);
+  assert.equal(behavior.next(pet,90000,true),null);assert.equal(behavior.nextAt,135000);
+  behavior.reset();assert.equal(behavior.next(pet,110000,true),null);assert.equal(behavior.nextAt,155000);
+});
+test('calm has longer quiet intervals than playful, and quiet never schedules actions',async()=>{
+  const {RandomAnimations}=await sprite;const schedule=new RandomAnimations(()=>0);
+  assert.equal(schedule.delay('calm'),45000);assert.equal(schedule.delay('playful'),15000);
+  assert.equal(schedule.next({builtin:false},0,true,false,'quiet'),null);assert.equal(schedule.nextAt,null);
+});
+test('static preview drawing creates no recurring animation task and hidden sprites stop immediately',async()=>{
+  const {PetSprite}=await sprite;
+  const canvas={getContext:()=>({clearRect(){},save(){},scale(){},restore(){},drawImage(){}})};
+  const preview=new PetSprite(canvas);preview.motion=false;
+  await preview.setPet({id:'test',builtin:false,assetUrl:'unused'}).catch(()=>{});
+  assert.equal(preview.timer,null);
+  preview.image={};preview.motion=true;assert.notEqual(preview.timer,null);
+  preview.active=false;assert.equal(preview.timer,null);
+  preview.stop();
 });

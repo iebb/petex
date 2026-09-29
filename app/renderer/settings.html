@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-GB">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' pet-asset:; connect-src 'none'; object-src 'none'; base-uri 'none'">
@@ -8,31 +8,35 @@
 <body>
 <div class="titlebar">Petex</div>
 <main>
-  <section class="selected-pet" aria-label="Selected pet">
-    <canvas id="hero-pet" aria-label="Selected pet preview"></canvas>
-    <div class="selected-details"><h1 id="pet-name">Miso</h1><p id="presence">Visible on desktop</p>
-      <div class="animation-controls"><select id="animation" aria-label="Animation"></select><button id="play">Play</button><button id="delete-pet" hidden>Delete</button></div>
+  <section class="selected-pet" data-i18n-aria="selectedPet">
+    <canvas id="hero-pet" data-i18n-aria="preview"></canvas>
+    <div class="selected-details"><h1 id="pet-name">Miso</h1><p id="presence"></p>
+      <div class="animation-controls"><select id="animation" data-i18n-aria="animations"></select><button id="play" data-i18n="play"></button><button id="delete-pet" data-i18n="delete" hidden></button><button id="export-pet" data-i18n="exportPet" hidden></button></div>
     </div>
   </section>
   <section aria-labelledby="collection-title">
-    <div class="section-heading"><h2 id="collection-title">Pets <span id="pet-count">1</span></h2><div class="footer-links"><button id="import-builtins" class="text-button">Built-in pets</button><button id="discover" class="text-button">Import from Codex</button></div></div>
-    <div class="pet-list" id="pet-list" aria-label="Choose a pet"></div>
-    <div class="import-note">Drop a pet folder or <button id="import-file" class="text-button">import a file</button><span>ZIP · JSON · PNG · WebP</span></div>
+    <div class="section-heading"><h2 id="collection-title"><span data-i18n="pets"></span> <span id="pet-count">1</span></h2><div class="footer-links"><button id="import-builtins" class="text-button" data-i18n="builtins"></button><button id="discover" class="text-button" data-i18n="discover"></button></div></div>
+    <div class="pet-list" id="pet-list" data-i18n-aria="choosePet"></div>
+    <div class="import-note"><span class="drop-label" data-i18n="dropFolder"></span><button id="import-file" class="text-button" data-i18n="importFile"></button><span class="file-types">ZIP · JSON · PNG · WebP</span></div>
   </section>
-  <section aria-labelledby="preferences-title"><div class="section-heading"><h2 id="preferences-title">Settings</h2></div>
+  <section aria-labelledby="preferences-title"><div class="section-heading"><h2 id="preferences-title" data-i18n="settingsHeading"></h2></div>
     <div class="preferences-grid">
-      <div class="setting size-setting"><label for="size">Size</label><input id="size" type="range" min="48" max="240" step="8" value="160" aria-label="Pet size"><output id="size-description" for="size">160 px</output></div>
-      <label class="setting toggle-setting"><span>Always on top</span><input id="alwaysOnTop" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
-      <label class="setting toggle-setting"><span>Animations</span><input id="motion" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
-      <label class="setting toggle-setting"><span>Random animations</span><input id="randomAnimations" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
-      <label class="setting toggle-setting"><span>Follow cursor<span id="gaze-description" class="setting-description" hidden></span></span><input id="followCursor" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
-      <label class="setting toggle-setting"><span>Launch at login<span id="login-description" class="setting-description" hidden></span></span><input id="launchAtLogin" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
-      <label class="setting toggle-setting"><span>Show pet</span><input id="visible" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+      <div class="setting size-setting"><label for="size" data-i18n="size"></label><input id="size" type="range" min="48" max="240" step="8" value="160" data-i18n-aria="size"><output id="size-description" for="size">160 px</output></div>
+      <label class="setting toggle-setting"><span data-i18n="alwaysOnTop"></span><input id="alwaysOnTop" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+      <label class="setting toggle-setting"><span data-i18n="animations"></span><input id="motion" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+      <label class="setting select-setting"><span data-i18n="behaviour"></span><select id="behaviour"><option value="quiet" data-i18n="quiet"></option><option value="calm" data-i18n="calm"></option><option value="playful" data-i18n="playful"></option></select></label>
+      <label class="setting toggle-setting"><span><span data-i18n="followCursor"></span><span id="gaze-description" class="setting-description" hidden></span></span><input id="followCursor" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+      <label class="setting toggle-setting"><span><span data-i18n="login"></span><span id="login-description" class="setting-description" hidden></span></span><input id="launchAtLogin" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+      <label class="setting toggle-setting"><span data-i18n="showPet"></span><input id="visible" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+      <label class="setting toggle-setting"><span><span data-i18n="hideFullscreen"></span><span id="fullscreen-description" class="setting-description" hidden></span></span><input id="hideFullscreen" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+      <label class="setting toggle-setting"><span data-i18n="snapEdges"></span><input id="snapEdges" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+      <label class="setting toggle-setting"><span><span data-i18n="shortcut"></span><span id="shortcut-description" class="setting-description"></span></span><input id="shortcut" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+      <label class="setting select-setting"><span data-i18n="language"></span><select id="language"></select></label>
     </div>
   </section>
-  <footer><div class="footer-links"><button class="text-button" id="home">Reset position</button><button class="text-button" id="open-folder" title="Open the imported pets folder">Open folder</button><a id="github" class="text-button" href="https://github.com/iebb/petex">GitHub</a></div><button id="done">Done</button></footer>
+  <footer><div class="footer-links"><button class="text-button" id="home" data-i18n="reset"></button><button class="text-button" id="open-folder" data-i18n="folder" data-i18n-title="folderTitle"></button><button class="text-button" id="backup" data-i18n="backup"></button><a id="github" class="text-button" href="https://github.com/iebb/petex">GitHub</a></div><button id="done" data-i18n="done"></button></footer>
 </main>
 <div id="toast" role="status" aria-live="polite" hidden></div>
-<div id="drop-overlay" hidden>Drop to import</div>
-<script type="module" src="settings.js"></script>
+<div id="drop-overlay" data-i18n="drop" hidden></div>
+<script src="../locales.js"></script><script type="module" src="settings.js"></script>
 </body></html>

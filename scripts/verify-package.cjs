@@ -25,6 +25,9 @@ function verify(platform, arch) {
   for (const file of ['LICENSE', 'NOTICE']) assert.ok(fs.readFileSync(file).equals(asar.extractFile(paths.archive, file)), `Missing ${file}`);
   const native = asar.listPackage(paths.archive).find(file => file.includes(`sharp-${platform}-${arch}`) && file.endsWith('.node'));
   assert.ok(native && fs.existsSync(`${paths.archive}.unpacked${native}`), 'Correct native image library must be unpacked');
+  const helper = path.join(`${paths.archive}.unpacked`, 'app/native', `fullscreen-${platform}-${arch}${platform === 'win32' ? '.exe' : ''}`);
+  assert.ok(fs.existsSync(helper), 'Fullscreen helper must be unpacked');
+  assert.ok(['0','-1'].includes(execFileSync(helper, {input:'0 0 0 1 1\n', encoding:'utf8'}).trim()), 'Fullscreen helper must run on the target architecture');
   if (platform === 'darwin') {
     const identifier = execFileSync('plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', path.join(paths.bundle, 'Contents/Info.plist')], {encoding: 'utf8'}).trim();
     assert.equal(identifier, 'ad.neko.petex');

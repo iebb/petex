@@ -3,16 +3,21 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const AdmZip = require('adm-zip');
 const sharp = require('sharp');
+const {languages} = require('./locales.js');
 
 const MAX_IMAGE = 32 * 1024 * 1024;
 const MAX_MANIFEST = 64 * 1024;
-const DEFAULTS = Object.freeze({ petId: 'miso', size: 160, alwaysOnTop: true, motion: true, randomAnimations: true, followCursor: true, launchAtLogin: false, visible: true, position: null });
+const MAX_BACKUP = 256 * 1024 * 1024;
+const DEFAULTS = Object.freeze({ petId: 'miso', size: 160, alwaysOnTop: true, motion: true, randomAnimations: true, behaviour: 'calm', followCursor: true, launchAtLogin: false, visible: true, hideFullscreen: false, snapEdges: true, shortcut: true, language: 'auto', position: null });
 const BUILTIN = Object.freeze({ id: 'miso', displayName: 'Miso', description: 'Built-in cat.', builtin: true, spriteVersionNumber: 2 });
 function normalizeSettings(input = {}) {
+  const behaviour = ['quiet','calm','playful'].includes(input.behaviour) ? input.behaviour : input.randomAnimations === false ? 'quiet' : 'calm';
   return {
     petId: typeof input.petId === 'string' ? input.petId : DEFAULTS.petId,
     size: Number.isFinite(input.size) ? Math.max(48, Math.min(240, Math.round(input.size))) : DEFAULTS.size,
-    ...Object.fromEntries(['alwaysOnTop', 'motion', 'randomAnimations', 'followCursor', 'launchAtLogin', 'visible'].map(k => [k, typeof input[k] === 'boolean' ? input[k] : DEFAULTS[k]])),
+    ...Object.fromEntries(['alwaysOnTop', 'motion', 'followCursor', 'launchAtLogin', 'visible', 'hideFullscreen', 'snapEdges', 'shortcut'].map(k => [k, typeof input[k] === 'boolean' ? input[k] : DEFAULTS[k]])),
+    behaviour, randomAnimations: behaviour !== 'quiet' && input.randomAnimations !== false,
+    language: input.language === 'auto' || Object.hasOwn(languages,input.language) ? input.language : 'auto',
     position: input.position && Number.isFinite(input.position.x) && Number.isFinite(input.position.y) ? {x: Math.round(input.position.x), y: Math.round(input.position.y)} : null,
   };
 }
@@ -110,6 +115,56 @@ class Library {
   async import(input) {
     const {manifest, bytes} = await readPackage(input);
     return this.importSprite(manifest, bytes);
+  }
+  async importMany(input) {
+    if (path.extname(input).toLowerCase() !== '.zip') return [await this.import(input)];
+    const zip = new AdmZip(await readBounded(input, MAX_BACKUP));
+    const marker = zip.getEntry('petex-library.json');
+    if (!marker) return [await this.import(input)];
+    const invalid = () => Object.assign(new Error('This is not a valid Petex library backup.'), {key:'backupInvalid'});
+    if (marker.header.size > MAX_MANIFEST) throw invalid();
+    let backup;
+    try { backup = JSON.parse(marker.getData().toString('utf8')); } catch { throw invalid(); }
+    if (backup.format !== 'petex-library' || backup.version !== 1 || !Array.isArray(backup.pets) || !backup.pets.length || backup.pets.length > 100) throw invalid();
+    const entries = zip.getEntries();
+    if (entries.length > 500 || entries.reduce((sum,e)=>sum+e.header.size,0)>MAX_BACKUP) throw invalid();
+    for (const entry of entries) safeRelative(entry.entryName.replace(/\/$/,''));
+    const packages=[];
+    const folders=new Set();
+    for (const pet of backup.pets) {
+      if (!/^pets\/pet-\d+$/.test(pet.folder) || folders.has(pet.folder)) throw invalid();
+      folders.add(pet.folder);
+      const manifests=entries.filter(e=>e.entryName===pet.folder+'/pet.json'&&!e.isDirectory);
+      if (manifests.length!==1 || manifests[0].header.size>MAX_MANIFEST) throw invalid();
+      const manifest=parseManifest(manifests[0].getData());
+      const sprites=entries.filter(e=>e.entryName===pet.folder+'/'+manifest.spritesheetPath&&!e.isDirectory);
+      if (sprites.length!==1 || sprites[0].header.size>MAX_IMAGE) throw invalid();
+      const bytes=sprites[0].getData();
+      await validateSprite(bytes,manifest.spriteVersionNumber);
+      packages.push({manifest,bytes});
+    }
+    const results=[];
+    for (const pet of packages) results.push(await this.importSprite(pet.manifest,pet.bytes));
+    return results;
+  }
+  async exportBytes(id = null) {
+    const selected=(await this.list()).filter(p=>!p.builtin && (id===null || p.id===id));
+    if (!selected.length) throw Object.assign(new Error(id ? 'Miso is included with Petex and does not need exporting.' : 'Import a pet before backing up your library.'),{key:id?'builtinExport':'backupEmpty'});
+    const zip=new AdmZip(), folders=[];
+    let total=0;
+    for (const [index,pet] of selected.entries()) {
+      const {manifest,bytes}=await readFolder(path.join(this.petsPath,pet.id,'pet.json'));
+      await validateSprite(bytes,manifest.spriteVersionNumber);
+      total+=bytes.length;
+      if (total>MAX_BACKUP-1024*1024 || selected.length>100) throw Object.assign(new Error('The library is too large to export in one ZIP. Export pets individually.'),{key:'backupLarge'});
+      const folder=id===null?`pets/pet-${index+1}/`:'';
+      const data={displayName:manifest.displayName,description:manifest.description,spriteVersionNumber:manifest.spriteVersionNumber,spritesheetPath:manifest.spritesheetPath};
+      zip.addFile(folder+'pet.json',Buffer.from(JSON.stringify(data,null,2)));
+      zip.addFile(folder+manifest.spritesheetPath,bytes);
+      folders.push({folder:folder.replace(/\/$/,'')});
+    }
+    if (id===null) zip.addFile('petex-library.json',Buffer.from(JSON.stringify({format:'petex-library',version:1,pets:folders},null,2)));
+    return zip.toBuffer();
   }
   async importSprite(manifest, bytes) {
     manifest = parseManifest(Buffer.from(JSON.stringify(manifest)));

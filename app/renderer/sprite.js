@@ -20,17 +20,19 @@ export function availableAnimations(pet) {
 export class RandomAnimations {
   constructor(random = () => Math.random()) { this.random = random; this.reset(); }
   reset() { this.nextAt = null; this.previous = null; }
-  delay() { return 12000 + this.random() * 18000; }
-  next(pet, now, enabled, busy = false) {
-    if (!enabled) { this.nextAt = null; return null; }
-    if (this.nextAt === null || busy) { this.nextAt = now + this.delay(); return null; }
+  delay(behaviour = 'calm') { return behaviour === 'playful' ? 15000 + this.random() * 25000 : 45000 + this.random() * 75000; }
+  next(pet, now, enabled, busy = false, behaviour = 'calm') {
+    if (!enabled || behaviour === 'quiet') { this.nextAt = null; return null; }
+    if (this.nextAt === null || busy) { this.nextAt = now + this.delay(behaviour); return null; }
     if (now < this.nextAt) return null;
+    const weights = {waving:4, review:4, waiting:3, running:2, jumping:behaviour==='playful'?3:1, failed:.5, 'running-left':1, 'running-right':1};
     const choices = availableAnimations(pet).filter(name => name !== this.previous);
-    const name = choices[Math.min(choices.length - 1, Math.floor(this.random() * choices.length))];
-    const cycles = 1 + Math.floor(this.random() * 3);
+    let roll = this.random() * choices.reduce((sum,name)=>sum+weights[name],0);
+    const name = choices.find(name => (roll -= weights[name]) < 0) || choices.at(-1);
+    const cycles = behaviour==='playful' ? 1 + Math.floor(this.random() * 2) : 1;
     const duration = ANIMATIONS[name].durations.reduce((a, b) => a + b, 0) * cycles;
     this.previous = name;
-    this.nextAt = now + duration + this.delay();
+    this.nextAt = now + duration + this.delay(behaviour);
     return {name, duration};
   }
 }
@@ -84,35 +86,50 @@ export function drawMiso(ctx, time = 0, state = 'idle', gaze = null, motion = tr
 }
 export class PetSprite {
   constructor(canvas) {
-    this.canvas = canvas; this.ctx = canvas.getContext('2d', {willReadFrequently: true});
-    this.pet = null;this.image=null;this.state='idle';this.started=performance.now();this.motion=true;this.gaze=null;this.last=0;this.raf=0;this.stopped=false;
+    this.canvas=canvas;this.ctx=canvas.getContext('2d',{willReadFrequently:true});
+    this.pet=null;this.image=null;this.state='idle';this.started=performance.now();
+    this._motion=true;this._gaze=null;this._active=true;this.timer=null;this.stopped=false;
     canvas.width=384;canvas.height=416;
-    this.tick=this.tick.bind(this);this.tick(0);
+    this.visibility=()=>this.refresh();
+    if(typeof document!=='undefined')document.addEventListener('visibilitychange',this.visibility);
   }
+  get motion(){return this._motion;}
+  set motion(value){if(this._motion!==!!value){this._motion=!!value;this.started=performance.now();this.refresh();}}
+  get gaze(){return this._gaze;}
+  set gaze(value){if(JSON.stringify(value)!==JSON.stringify(this._gaze)){this._gaze=value;this.refresh();}}
+  get active(){return this._active;}
+  set active(value){if(this._active!==!!value){this._active=!!value;this.started=performance.now();this.refresh();}}
   async setPet(pet) {
-    if (this.pet?.id === pet.id) return;
-    this.pet=pet;this.image=null;
-    if (!pet.builtin) {
+    if(this.pet?.id===pet.id)return;
+    this.pet=pet;this.image=null;this.started=performance.now();this.refresh();
+    if(!pet.builtin){
       const image=new Image();image.crossOrigin='anonymous';image.src=pet.assetUrl;
       await image.decode();
-      if(this.pet.id===pet.id)this.image=image;
+      if(this.pet.id===pet.id){this.image=image;this.refresh();}
     }
   }
-  action(state) {this.state=state;this.started=performance.now();}
+  action(state){this.state=state;this.started=performance.now();this.refresh();}
+  refresh(){clearTimeout(this.timer);this.timer=null;this.tick(performance.now());}
   tick(now) {
-    if(this.stopped)return;
-    this.raf=requestAnimationFrame(this.tick);
-    if(now-this.last<40)return;this.last=now;
+    if(this.stopped||!this._active||(typeof document!=='undefined'&&document.hidden))return;
     const elapsed=this.motion?now-this.started:0;
-    const pose=this.motion && this.gaze && this.pet?.spriteVersionNumber===2 && this.state==='idle' ? gazeFrame(this.gaze.x,this.gaze.y) : animationFrame(this.motion?this.state:'idle',elapsed);
-    const renderKey=JSON.stringify([this.pet?.id,!!this.image,this.pet?.builtin&&this.motion?Math.floor(now/40):0,pose,this.motion,this.gaze]);
-    if(this.renderKey===renderKey)return;this.renderKey=renderKey;
-    const ctx=this.ctx;ctx.clearRect(0,0,384,416);ctx.save();ctx.scale(2,2);
-    if(this.pet?.builtin)drawMiso(ctx,this.motion?now:0,this.motion?this.state:'idle',this.motion?this.gaze:null,this.motion,elapsed);
-    else if(this.image) {
-      ctx.drawImage(this.image,pose.frame*192,pose.row*208,192,208,0,0,192,208);
+    const gazing=this.motion&&this.gaze&&this.pet?.spriteVersionNumber===2&&this.state==='idle';
+    const pose=gazing?gazeFrame(this.gaze.x,this.gaze.y):animationFrame(this.motion?this.state:'idle',elapsed);
+    const renderKey=JSON.stringify([this.pet?.id,!!this.image,this.pet?.builtin&&this.motion?Math.floor(now/40):0,pose,this.motion,this.pet?.builtin?this.gaze:null]);
+    if(this.renderKey!==renderKey){
+      this.renderKey=renderKey;
+      const ctx=this.ctx;ctx.clearRect(0,0,384,416);ctx.save();ctx.scale(2,2);
+      if(this.pet?.builtin)drawMiso(ctx,this.motion?now:0,this.motion?this.state:'idle',this.motion?this.gaze:null,this.motion,elapsed);
+      else if(this.image)ctx.drawImage(this.image,pose.frame*192,pose.row*208,192,208,0,0,192,208);
+      ctx.restore();
     }
-    ctx.restore();
+    // Static cards and paused/hidden pets have no recurring drawing task.
+    if(!this.motion||!this.pet||(!this.pet.builtin&&(!this.image||gazing)))return;
+    const animation=ANIMATIONS[this.state]||ANIMATIONS.idle;
+    const cycle=animation.durations.reduce((a,b)=>a+b,0);
+    const used=animation.durations.slice(0,pose.frame).reduce((a,b)=>a+b,0);
+    const delay=this.pet.builtin?40:Math.max(16,animation.durations[pose.frame]-(elapsed%cycle-used));
+    this.timer=setTimeout(()=>{this.timer=null;this.tick(performance.now());},delay);
   }
-  stop() {this.stopped=true;cancelAnimationFrame(this.raf);}
+  stop(){this.stopped=true;clearTimeout(this.timer);this.timer=null;if(typeof document!=='undefined')document.removeEventListener('visibilitychange',this.visibility);}
 }

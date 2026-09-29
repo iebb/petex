@@ -6,7 +6,7 @@ Petex lives in the menu bar / system tray. Its transparent companion window floa
 
 ## Run
 
-Requires Node.js 22.12 or newer. The first desktop run downloads Electron before starting the app or its tests.
+Requires Node.js 22.12 or newer and the platform’s native build tools (Xcode Command Line Tools on macOS or Visual Studio C++ Build Tools on Windows). The first desktop run downloads Electron before starting the app or its tests.
 
 ```sh
 npm ci
@@ -29,7 +29,7 @@ Supported Codex formats:
 | v1 (including omitted version) | 1536 × 1872, 8 × 9 cells | Original animation rows |
 | v2 | 1536 × 2288, 8 × 11 cells | Original rows plus 16 cursor gaze directions |
 
-Every cell is 192 × 208. Standard rows retain Codex's frame counts and durations. Random playback uses all eight non-idle rows: wave, jump, sad, wait, work, look, walk left, and walk right. The animation picker lets you play any supported row manually. Built-in Miso uses its four supported actions.
+Every cell is 192 × 208. Standard rows retain Codex's frame counts and durations. Weighted random playback uses all eight non-idle rows: wave, jump, sad, wait, work, look, walk left, and walk right. The animation picker lets you play any supported row manually. Built-in Miso uses its four supported actions.
 
 ```json
 {
@@ -45,7 +45,15 @@ The sprite sheet must be a static PNG or WebP, smaller than 32 MB, inside the pe
 
 ## Simple settings
 
-Pet size (48–240 px), always on top, animation, random animation, cursor gaze, launch at login, and show / hide. Random animations are enabled by default. After 12–30 idle seconds, the pet plays a random action for 1–3 complete loops, then returns to idle. Consecutive random actions do not repeat. Dragging and manual playback postpone the next random action; hiding the pet or pausing animation prevents automatic playback. **Reset position** restores a misplaced pet to the primary display. Positions are clamped to a connected display's work area. Launch at login is available in a packaged app. Pause animation for a motion-free companion.
+Pet size (48–240 px), always on top, animations, cursor gaze, launch at login, and show / hide. Choose **Quiet**, **Calm**, or **Playful** behaviour. Calm leaves 45–120 seconds between actions; Playful uses 15–40 seconds. Waves and looking around are more common than jumps or sad poses. Occasional short walks move the pet within its current display. Clicking, dragging, pausing, or hiding interrupts a walk. Quiet keeps the idle animation and manual interactions without automatic actions.
+
+**Snap to edges** gently snaps a released drag near a display edge. **Hide in fullscreen** temporarily hides the pet while another app fills its display. The pet returns when fullscreen ends, preserving your show / hide preference. **⌘⇧P** on macOS or **Ctrl+Shift+P** on Windows toggles visibility globally; turn the shortcut off if you prefer. Settings reports if another app already uses it. **Reset position** restores a misplaced pet to the primary display. Positions stay within a connected display’s work area.
+
+Settings, menus, dialogs, and errors support English (UK), Simplified Chinese, Traditional Chinese, Japanese, Spanish, and French. The language follows the system by default and can be changed in settings. Switch pets directly in the tray’s **Choose pet** menu.
+
+**Export pet** saves a Codex-compatible ZIP with its manifest and artwork. **Back up library** saves all imported pets in one ZIP; restore it with **import a file**. Identical artwork is deduplicated on restore. Backups contain pet artwork and metadata; Miso is included with the app. Library backups support up to 100 pets and 256 MB. Export individual pets for larger collections.
+
+Static previews and paused pets stop scheduling draws. Hidden pets stop cursor polling and automatic actions. Screen lock and system sleep suspend activity, and unlocking resumes it without overriding your show / hide choice. Fullscreen detection uses a local helper that checks the foreground window’s geometry; it never captures screen content or reads window titles.
 
 Settings and copied pets are stored in Electron's `userData` directory: `~/Library/Application Support/Pedex` on macOS and `%APPDATA%\Pedex` on Windows. There is no telemetry, account, remote content, or API key. Renderers are sandboxed with context isolation; the preload exposes only purpose-specific operations.
 
