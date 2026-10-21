@@ -40,6 +40,8 @@ test('renders the native companion, settings, and working controls',async()=>{
   await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Petex pet').isVisible())).toBe(false);
   await settingsPage.getByRole('button',{name:'Reset position'}).click();
   await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Petex pet').isVisible())).toBe(true);
+  await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Petex').setContentSize(600,620));
+  expect(await settingsPage.locator('#done').evaluate(node=>node.getBoundingClientRect().bottom<=innerHeight)).toBe(true);
 });
 test('discovers real-format Codex pets, deduplicates and persists selection',async()=>{
   await settingsPage.getByRole('button',{name:'Import from Codex'}).click();
