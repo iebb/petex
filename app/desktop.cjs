@@ -62,6 +62,7 @@ class DesktopPets {
     if(anchor){const d=screen.getDisplayMatching(bounds),a=d.workArea;settings.placements[p.id]={displayId:String(d.id),x:Math.max(0,Math.min(1,(bounds.x-a.x)/Math.max(1,a.width-bounds.width))),y:Math.max(0,Math.min(1,(bounds.y-a.y)/Math.max(1,a.height-bounds.height)))};}
   }
   apply(reflow=false) {
+    if(this.disposed)return;
     const {settings,pets}=this.getState();
     if(!reflow)for(const p of this.instances.values())if(p.walking||p.drag)this.remember(p);
     this.cancelSocial();
@@ -89,6 +90,7 @@ class DesktopPets {
     if(interval===this.interval)return;clearInterval(this.timer);this.interval=interval;this.timer=interval?setInterval(()=>this.tick(),interval):null;
   }
   tick() {
+    if(this.disposed)return;
     const now=performance.now(),cursor=screen.getCursorScreenPoint();
     for(const p of this.instances.values()){
       if(!this.active(p))continue;

@@ -55,7 +55,7 @@ function configureShortcut() {
   if(settings.shortcut)shortcutAvailable=globalShortcut.register(SHORTCUT,()=>toggleVisible());
 }
 function checkFullscreen(initial=false) {
-  if(!desktop||fullscreenMonitor.pending||(!initial&&(!settings.hideFullscreen||!settings.visible||!screenAwake)))return;
+  if(quitting||!desktop||fullscreenMonitor.pending||(!initial&&(!settings.hideFullscreen||!settings.visible||!screenAwake)))return;
   const displays=[...new Map(desktop.windows.map(win=>{const d=screen.getDisplayMatching(win.getBounds());return [String(d.id),d];})).values()];
   const display=displays[fullscreenIndex++%displays.length];fullscreenQuery=String(display.id);
   fullscreenMonitor.check(process.platform==='win32'?screen.dipToScreenRect(null,display.bounds):display.bounds);
@@ -66,7 +66,7 @@ function configureFullscreen() {
   else{fullscreenMonitor.stop();fullscreenDisplays.clear();fullscreenHidden=false;}
 }
 function applySettings(reflow=false) {
-  if(!desktop)return;
+  if(quitting||!desktop)return;
   desktop.apply(reflow);configureShortcut();configureFullscreen();updateApplicationMenu();broadcast();
 }
 function toggleVisible() {
