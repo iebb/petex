@@ -1,6 +1,6 @@
 {
   "name": "petex",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Desktop pets for macOS and Windows.",
   "main": "app/main.cjs",
@@ -13,8 +13,8 @@
     "test:desktop": "node -e \"require('electron')\" && playwright test",
     "check": "node --check app/main.cjs && node --check app/library.cjs && node --check app/preload.cjs && node --check app/renderer/settings.js && node --check app/renderer/pet.js && npm test",
     "pack": "electron-builder --dir",
-    "dist:mac": "electron-builder --mac dmg zip --publish never",
-    "dist:win": "electron-builder --win nsis --x64 --publish never",
+    "dist:mac": "node scripts/distribution.cjs mac",
+    "dist:win": "node scripts/distribution.cjs win --x64",
     "icons": "node scripts/icons.cjs",
     "verify:package": "node scripts/verify-package.cjs",
     "test:packaged": "node scripts/test-package.cjs",

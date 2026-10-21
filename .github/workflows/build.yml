@@ -54,6 +54,14 @@ jobs:
       - name: Test desktop interactions
         run: npm run test:desktop
       - name: Build installers
+        env:
+          MAC_CSC_LINK: ${{ matrix.target == 'mac' && secrets.MAC_CSC_LINK || '' }}
+          MAC_CSC_KEY_PASSWORD: ${{ matrix.target == 'mac' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          APPLE_API_KEY_CONTENT: ${{ matrix.target == 'mac' && secrets.APPLE_API_KEY_CONTENT || '' }}
+          APPLE_API_KEY_ID: ${{ matrix.target == 'mac' && secrets.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER: ${{ matrix.target == 'mac' && secrets.APPLE_API_ISSUER || '' }}
+          WIN_CSC_LINK: ${{ matrix.target == 'win' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ matrix.target == 'win' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
         run: npm run dist:${{ matrix.target }} -- --${{ matrix.arch }}
       - name: Verify and test the packaged app
         run: npm run test:packaged -- ${{ matrix.platform }} ${{ matrix.arch }}

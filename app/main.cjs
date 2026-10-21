@@ -5,8 +5,8 @@ const fs = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 const { Library, normalizeSettings } = require('./library.cjs');
 const {findArchive, readBuiltins} = require('./codex-builtins.cjs');
-const { DragTracker } = require('./drag.cjs');
-const {snapPosition,walkTarget} = require('./placement.cjs');
+const {DesktopPets}=require('./desktop.cjs');
+const {MAX_PETS,newCompanion}=require('./preferences.cjs');
 const {FullscreenMonitor} = require('./fullscreen.cjs');
 const {resolveLocale,translate,localizeError} = require('./locales.js');
 
@@ -17,22 +17,28 @@ app.setName('Petex');
 protocol.registerSchemesAsPrivileged([{scheme: 'pet-asset', privileges: {standard: true, secure: true, supportFetchAPI: true, corsEnabled: true}}]);
 const locked = app.requestSingleInstanceLock();
 if (!locked) app.quit();
-let library, settings, pets = [], petWindow, settingsWindow, tray, timer, drag = null, quitting = false;
+let library, settings, pets = [], petWindow, settingsWindow, areaWindow, desktop, tray, quitting = false;
 let queue = Promise.resolve();
-let walking=null, screenAwake=true, fullscreenHidden=false, fullscreenMonitor, fullscreenTimer=null, cursorInterval=0, lastCursor=null, shortcutAvailable=false, shortcutEnabled=null,activityReady=false;
+let screenAwake=true, fullscreenHidden=false, fullscreenMonitor, fullscreenTimer=null, shortcutAvailable=false, shortcutEnabled=null,activityReady=false,fullscreenQuery=null,fullscreenIndex=0;
+const fullscreenDisplays=new Set();
 const SHORTCUT='CommandOrControl+Shift+P';
 const locale=()=>resolveLocale(settings?.language==='auto'?app.getLocale():settings?.language);
 const t=(key,values)=>translate(locale(),key,values);
 const errorText=error=>localizeError(locale(),error);
-const petActive=()=>!!settings?.visible&&screenAwake&&!(settings.hideFullscreen&&fullscreenHidden);
+const petActive=()=>desktop?desktop.active(desktop.primary):!!settings?.visible&&screenAwake&&!(settings.hideFullscreen&&fullscreenHidden);
 const enqueue = action => { const result = queue.then(action); queue = result.catch(() => {}); return result; };
 const rendererPath = name => path.join(__dirname, 'renderer', name);
 const selectedPet = () => pets.find(p => p.id === settings.petId) || pets[0];
-const snapshot = () => ({settings, pets, platform: process.platform, version: app.getVersion(), locale:locale(), petActive:petActive(), screenAwake, activityReady, fullscreenHidden, shortcutAvailable, fullscreenAvailable:!!fullscreenMonitor?.available, codexImports: !process.mas, loginAvailable: app.isPackaged && !process.env.PEDEX_DATA_DIR});
+function snapshot(win) {
+  const instance=desktop?.fromWindow(win);
+  const instances=desktop?[...desktop.instances.values()].map(p=>({id:p.id,petId:desktop.config(p).petId,size:desktop.config(p).size,behaviour:desktop.config(p).behaviour,visible:desktop.config(p).visible,active:desktop.active(p),activity:p.activity,bounds:p.win.getBounds()})):[];
+  return {settings:instance?desktop.config(instance):settings,pets,instanceId:instance?.id,instances,displays:screen.getAllDisplays().map(d=>({id:String(d.id),name:d.label||String(d.id),workArea:d.workArea})),platform:process.platform,version:app.getVersion(),locale:locale(),petActive:instance?desktop.active(instance):petActive(),screenAwake,activityReady,fullscreenHidden,resting:desktop?.routineResting||false,shortcutAvailable,fullscreenAvailable:!!fullscreenMonitor?.available,codexImports:!process.mas,loginAvailable:app.isPackaged&&!process.env.PEDEX_DATA_DIR};
+}
 function broadcast() {
-  for (const win of [petWindow, settingsWindow]) if (win && !win.isDestroyed()) win.webContents.send('state:changed', snapshot());
+  for(const win of [...(desktop?.windows||[]),settingsWindow,areaWindow])if(win&&!win.isDestroyed())win.webContents.send('state:changed',snapshot(win));
   updateTray();
 }
+async function reloadPets(){pets=(await library.list()).map(p=>({...p,displayName:settings.petNames[p.id]||p.displayName}));}
 function secure(win) {
   win.webContents.setWindowOpenHandler(() => ({action: 'deny'}));
   win.webContents.on('will-navigate', event => event.preventDefault());
@@ -40,50 +46,27 @@ function secure(win) {
   win.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
 }
 function windowOptions() { return {preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, backgroundThrottling: true}; }
-function dimensions() { return {width: settings.size + 32, height: Math.ceil(settings.size * 208 / 192) + 32}; }
-function clampPosition(position) {
-  const {width, height} = dimensions();
-  const area = screen.getDisplayNearestPoint({x: Math.round(position.x + width / 2), y: Math.round(position.y + height / 2)}).workArea;
-  return {x: Math.round(Math.min(Math.max(position.x, area.x), area.x + area.width - width)), y: Math.round(Math.min(Math.max(position.y, area.y), area.y + area.height - height))};
-}
-function resetPosition() {
-  const area = screen.getPrimaryDisplay().workArea;
-  const {width, height} = dimensions();
-  settings.position = clampPosition({x: area.x + area.width - width - 64, y: area.y + area.height - height - 24});
-  petWindow.setPosition(settings.position.x, settings.position.y);
-}
-function refreshActivity() {
-  if(!petWindow||petWindow.isDestroyed())return;
-  if(!petActive()){if(drag)finishPress();stopWalking();petWindow.hide();}
-  else if(!petWindow.isVisible())petWindow.showInactive();
-  updateCursorSchedule();broadcast();
-}
+function resetPosition(){desktop.reset();}
+function refreshActivity(){desktop?.refresh();}
 function configureShortcut() {
   if(shortcutEnabled===settings.shortcut)return;
   globalShortcut.unregister(SHORTCUT);shortcutEnabled=settings.shortcut;shortcutAvailable=false;
   if(settings.shortcut)shortcutAvailable=globalShortcut.register(SHORTCUT,()=>toggleVisible());
 }
 function checkFullscreen(initial=false) {
-  if(!initial&&(!settings.hideFullscreen||!settings.visible||!screenAwake))return;
-  const display=screen.getDisplayMatching(petWindow.getBounds());
-  const bounds=process.platform==='win32'?screen.dipToScreenRect(null,display.bounds):display.bounds;
-  fullscreenMonitor.check(bounds);
+  if(!desktop||fullscreenMonitor.pending||(!initial&&(!settings.hideFullscreen||!settings.visible||!screenAwake)))return;
+  const displays=[...new Map(desktop.windows.map(win=>{const d=screen.getDisplayMatching(win.getBounds());return [String(d.id),d];})).values()];
+  const display=displays[fullscreenIndex++%displays.length];fullscreenQuery=String(display.id);
+  fullscreenMonitor.check(process.platform==='win32'?screen.dipToScreenRect(null,display.bounds):display.bounds);
 }
 function configureFullscreen() {
   clearInterval(fullscreenTimer);fullscreenTimer=null;
-  if(settings.hideFullscreen&&settings.visible&&screenAwake&&fullscreenMonitor.available){
-    checkFullscreen();fullscreenTimer=setInterval(()=>checkFullscreen(),1500);
-  }else{fullscreenMonitor.stop();fullscreenHidden=false;}
+  if(settings.hideFullscreen&&settings.visible&&screenAwake&&fullscreenMonitor.available){checkFullscreen();fullscreenTimer=setInterval(()=>checkFullscreen(),1500);}
+  else{fullscreenMonitor.stop();fullscreenDisplays.clear();fullscreenHidden=false;}
 }
-function applySettings() {
-  if(!petWindow||petWindow.isDestroyed())return;
-  stopWalking();
-  const {width,height}=dimensions(),current=petWindow.getBounds();
-  const pos=clampPosition(settings.position||current);
-  petWindow.setBounds({...pos,width,height});settings.position=pos;
-  petWindow.setAlwaysOnTop(settings.alwaysOnTop,'floating');
-  if(process.platform==='darwin')petWindow.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
-  configureShortcut();configureFullscreen();updateApplicationMenu();refreshActivity();
+function applySettings(reflow=false) {
+  if(!desktop)return;
+  desktop.apply(reflow);configureShortcut();configureFullscreen();updateApplicationMenu();broadcast();
 }
 function toggleVisible() {
   return enqueue(async()=>{settings.visible=!settings.visible;applySettings();await library.saveSettings(settings);});
@@ -107,6 +90,8 @@ function updateTray() {
   tray.setContextMenu(Menu.buildFromTemplate([
     {label:`Petex · ${selectedPet().displayName}`,enabled:false},
     {label:t('selectPet'),submenu:pets.map(p=>({label:p.displayName,type:'radio',checked:p.id===settings.petId,click:()=>selectPet(p.id)}))},
+    ...(settings.features.multiPet?[{label:t('companions'),submenu:settings.companions.map(c=>({label:pets.find(p=>p.id===c.petId)?.displayName||'Miso',type:'checkbox',checked:c.visible,click:()=>enqueue(async()=>{c.visible=!c.visible;applySettings();await library.saveSettings(settings);})}))}]:[]),
+    ...(settings.features.toys?[{label:t('throwBall'),enabled:settings.motion&&settings.visible,click:()=>desktop.throwBall()}]:[]),
     {label:t('settings'),click:showSettings},
     {type:'separator'},
     {label:t(settings.visible?'hidePet':'showPet'),click:toggleVisible},
@@ -117,17 +102,18 @@ function updateTray() {
     {label:t('quit'),accelerator:'CommandOrControl+Q',click:()=>app.quit()},
   ]));
 }
-function petMenu() {
-  stopWalking();updateCursorSchedule();
+function petMenu(p=desktop.primary) {
+  desktop.cancelSocial();p.walking=null;desktop.schedule();
   Menu.buildFromTemplate([
-    {label:t('wave'),click:()=>petWindow.webContents.send('pet:action','waving')},
-    {label:t('jump'),click:()=>petWindow.webContents.send('pet:action','jumping')},
+    {label:t('wave'),click:()=>desktop.action(p,'waving')},
+    {label:t('jump'),click:()=>desktop.action(p,'jumping')},
+    ...(settings.features.toys?[{label:t('throwBall'),enabled:settings.motion,click:()=>desktop.throwBall()}]:[]),
     {type:'separator'},
     {label:t('settings'),click:showSettings},
-    {label:t('hidePet'),click:toggleVisible},
+    {label:t('hidePet'),click:()=>desktop.hide(p)},
     {type:'separator'},
     {label:t('quit'),click:()=>app.quit()},
-  ]).popup({window:petWindow});
+  ]).popup({window:p.win});
 }
 function exportFromMenu(kind){exportLibrary(kind).catch(error=>dialog.showErrorBox(t('export'),errorText(error)));}
 async function exportLibrary(kind) {
@@ -148,68 +134,17 @@ function handler(channel, allowed, action) {
   ipcMain.handle(channel, async (event, ...args) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!allowed().includes(win) || event.senderFrame !== event.sender.mainFrame) throw new Error('Untrusted request.');
-    try { return {ok: true, value: await action(...args)}; } catch (error) { return {ok: false, error: errorText(error)}; }
+    try { return {ok: true, value: await action.apply(win,args)}; } catch (error) { return {ok: false, error: errorText(error)}; }
   });
 }
-function updateDrag(cursor) {
-  if (!drag) return null;
-  const state = drag.update(cursor, performance.now());
-  if (state.dragging) {
-    const position = clampPosition(state.position);
-    const current = petWindow.getBounds();
-    if (position.x !== current.x || position.y !== current.y) petWindow.setPosition(position.x, position.y);
-  }
-  return state;
-}
-function stopWalking() {
-  if(walking){walking=null;settings.position=clampPosition(petWindow.getBounds());}
-}
-function updateWalk(now) {
-  if(!walking)return;
-  const progress=Math.min(1,(now-walking.started)/walking.duration);
-  const eased=progress*progress*(3-2*progress);
-  const x=Math.round(walking.origin.x+(walking.target.x-walking.origin.x)*eased);
-  petWindow.setPosition(x,walking.origin.y);
-  if(progress>=1){stopWalking();enqueue(()=>library.saveSettings(settings));updateCursorSchedule();}
-}
-function startWalk(name,duration) {
-  if(!petActive()||!settings.motion||!settings.randomAnimations||drag||!['running-left','running-right'].includes(name)||!Number.isFinite(duration)||duration<250||duration>3600)throw new Error(t('walkError'));
-  const origin=petWindow.getBounds(),area=screen.getDisplayMatching(origin).workArea;
-  const target=walkTarget(origin,area,name,Math.max(24,Math.min(96,settings.size*.65)));
-  walking={origin,target,started:performance.now(),duration};updateCursorSchedule();
-}
-function pollCursor() {
-  if(!petActive()||petWindow.isDestroyed())return;
-  if(walking)updateWalk(performance.now());
-  const cursor=screen.getCursorScreenPoint(),bounds=petWindow.getBounds();
-  const movement=updateDrag(cursor);
-  const inside=cursor.x>=bounds.x&&cursor.y>=bounds.y&&cursor.x<bounds.x+bounds.width&&cursor.y<bounds.y+bounds.height;
-  if(!drag&&!walking&&!inside&&lastCursor&&lastCursor.x===cursor.x&&lastCursor.y===cursor.y)return;
-  lastCursor=cursor;
-  petWindow.webContents.send('pet:cursor',{x:cursor.x-bounds.x,y:cursor.y-bounds.y,dragging:movement?.dragging||false,direction:movement?.direction||null,dragGaze:movement?.gaze||null,walking:!!walking});
-}
-function updateCursorSchedule() {
-  const interval=!petActive()?0:drag?16:walking?33:settings.motion?50:120;
-  if(interval===cursorInterval)return;
-  clearInterval(timer);timer=null;cursorInterval=interval;lastCursor=null;
-  if(interval){timer=setInterval(pollCursor,interval);pollCursor();}
-}
-function finishPress() {
-  if(drag){
-    updateDrag(screen.getCursorScreenPoint());const wasDragging=drag.dragging;drag=null;
-    let position=clampPosition(petWindow.getBounds());
-    if(wasDragging&&settings.snapEdges){const bounds=petWindow.getBounds();position=snapPosition(bounds,screen.getDisplayMatching(bounds).workArea);}
-    settings.position=position;petWindow.setPosition(position.x,position.y);
-  }
-  updateCursorSchedule();
-}
 function configureIPC() {
-  const both = () => [petWindow, settingsWindow].filter(Boolean);
+  const petWindows=()=>desktop.windows;
+  const both=()=>[...desktop.windows,settingsWindow,areaWindow].filter(Boolean);
   const settingsOnly = () => [settingsWindow].filter(Boolean);
-  handler('state:get', both, () => snapshot());
+  handler('state:get',both,function(){return snapshot(this);});
   handler('settings:update', settingsOnly, patch => enqueue(async () => {
     if (!patch || typeof patch !== 'object') throw new Error('Invalid settings.');
-    const permitted = ['petId', 'size', 'alwaysOnTop', 'motion', 'randomAnimations', 'followCursor', 'launchAtLogin', 'visible', 'behaviour', 'hideFullscreen', 'snapEdges', 'shortcut', 'language'];
+    const permitted = ['petId', 'size', 'alwaysOnTop', 'motion', 'randomAnimations', 'followCursor', 'launchAtLogin', 'visible', 'behaviour', 'hideFullscreen', 'snapEdges', 'shortcut', 'language','features','primaryVisible','companions','routine','roamArea','favourites','petNames'];
     const clean = Object.fromEntries(Object.entries(patch).filter(([key]) => permitted.includes(key)));
     if (clean.petId && !pets.some(p => p.id === clean.petId)) throw new Error('That pet is no longer in your collection.');
     if(Object.hasOwn(clean,'behaviour'))clean.randomAnimations=clean.behaviour!=='quiet';
@@ -219,7 +154,7 @@ function configureIPC() {
       app.setLoginItemSettings({openAtLogin: next.launchAtLogin, ...(process.platform === 'win32' ? {args: ['--hidden']} : {})});
       next.launchAtLogin = app.getLoginItemSettings().openAtLogin;
     }
-    settings = next;
+    settings=next;await reloadPets();
     applySettings(); await library.saveSettings(settings); return snapshot();
   }));
   async function importPaths(paths) {
@@ -228,7 +163,7 @@ function configureIPC() {
       try { for(const result of await library.importMany(file))results.push({...result,source:path.basename(file)}); }
       catch (error) { results.push({error:errorText(error), source: path.basename(file)}); }
     }
-    pets = await library.list();
+    await reloadPets();
     const first = results.find(r => r.pet);
     if (first) {settings.petId = first.pet.id; settings.visible = true;}
     applySettings(); await library.saveSettings(settings); return results;
@@ -255,7 +190,7 @@ function configureIPC() {
     return enqueue(async () => {
       const results=[];
       for(const {manifest,bytes} of builtins)results.push({...await library.importSprite(manifest,bytes),source:manifest.displayName});
-      pets=await library.list();
+      await reloadPets();
       const added=results.find(r=>!r.duplicate);
       if(added){settings.petId=added.pet.id;settings.visible=true;}
       applySettings();await library.saveSettings(settings);return results;
@@ -272,48 +207,82 @@ function configureIPC() {
     if (!pet) throw new Error('This pet cannot be removed.');
     const answer = await dialog.showMessageBox(settingsWindow, {type: 'question', message:t('removeTitle',{name:pet.displayName}),detail:t('removeDetail'),buttons:[t('keep'),t('remove')], defaultId: 0, cancelId: 0});
     if (answer.response !== 1) return false;
-    await library.remove(id); pets = await library.list();
+    await library.remove(id); await reloadPets();
     if (settings.petId === id) settings.petId = 'miso';
+    settings.companions=settings.companions.filter(c=>c.petId!==id);delete settings.petNames[id];settings.favourites=settings.favourites.filter(value=>value!==id);
     applySettings(); await library.saveSettings(settings); return true;
   }));
   handler('pet:home', settingsOnly, () => enqueue(async () => {settings.visible = true; resetPosition(); applySettings(); await library.saveSettings(settings);}));
   handler('pet:play', settingsOnly, name => {
     const valid = selectedPet().builtin ? ['waving','jumping','running-left','running-right'] : ['waving','jumping','failed','waiting','running','review','running-left','running-right'];
     if (!valid.includes(name)) throw new Error('Unsupported animation.');
-    stopWalking();updateCursorSchedule();
-    petWindow.webContents.send('pet:action', name);
+    desktop.action(desktop.primary,name);
   });
   handler('pets:export', settingsOnly, exportLibrary);
-  handler('pet:wander', () => [petWindow], startWalk);
-  handler('settings:close', settingsOnly, () => settingsWindow.close());
-  handler('repository:open', settingsOnly, () => shell.openExternal('https://github.com/iebb/petex'));
-  handler('pets:open-folder', settingsOnly, async () => {
-    const error = await shell.openPath(library.petsPath);
-    if (error) throw new Error(error);
-  });
-  handler('pet:menu', () => [petWindow], petMenu);
-  handler('pet:press-start', () => [petWindow], () => {
-    stopWalking();
-    if(!petActive())return;
-    drag = new DragTracker(screen.getCursorScreenPoint(), petWindow.getBounds(), performance.now());
-    petWindow.setIgnoreMouseEvents(false);
-    updateCursorSchedule();
-  });
-  handler('pet:press-end', () => [petWindow], () => {
-    finishPress();
-    return enqueue(() => library.saveSettings(settings));
-  });
-  handler('pet:hit', () => [petWindow], hit => {if (!drag) petWindow.setIgnoreMouseEvents(hit !== true, {forward: true});});
+  handler('pet:wander',petWindows,function(name,duration){desktop.wander(desktop.fromWindow(this),name,duration);});
+  handler('settings:close',settingsOnly,()=>settingsWindow.close());
+  handler('repository:open',settingsOnly,()=>shell.openExternal('https://github.com/iebb/petex'));
+  handler('pets:open-folder',settingsOnly,async()=>{const error=await shell.openPath(library.petsPath);if(error)throw new Error(error);});
+  handler('pet:menu',petWindows,function(){petMenu(desktop.fromWindow(this));});
+  handler('pet:press-start',petWindows,function(){desktop.pressStart(desktop.fromWindow(this));});
+  handler('pet:press-end',petWindows,function(){desktop.pressEnd(desktop.fromWindow(this));});
+  handler('pet:hit',petWindows,function(hit){desktop.hit(desktop.fromWindow(this),hit);});
+  handler('pet:stroke',petWindows,function(){return desktop.petting(desktop.fromWindow(this));});
+  handler('companions:add',settingsOnly,id=>enqueue(async()=>{
+    if(!settings.features.multiPet||settings.companions.length>=MAX_PETS-1||!pets.some(p=>p.id===id))throw Object.assign(new Error(),{key:'petLimit'});
+    settings.companions.push(newCompanion(id,settings));applySettings();await library.saveSettings(settings);return snapshot();
+  }));
+  handler('companions:remove',settingsOnly,id=>enqueue(async()=>{settings.companions=settings.companions.filter(c=>c.id!==id);delete settings.placements[id];applySettings();await library.saveSettings(settings);}));
+  handler('companions:update',settingsOnly,(id,patch)=>enqueue(async()=>{
+    const item=settings.companions.find(c=>c.id===id);if(!item||!patch||typeof patch!=='object')throw new Error('Invalid settings.');
+    const allowed=['petId','size','behaviour','followCursor','visible'];
+    if(patch.petId&&!pets.some(p=>p.id===patch.petId))throw new Error('That pet is no longer in your collection.');
+    Object.assign(item,Object.fromEntries(Object.entries(patch).filter(([key])=>allowed.includes(key))));settings=normalizeSettings(settings);applySettings();await library.saveSettings(settings);
+  }));
+  handler('pets:interact',settingsOnly,()=>desktop.socialPlan('greet',true));
+  handler('toy:show',settingsOnly,()=>desktop.throwBall());
+  handler('toy:press',()=>desktop.toy?[desktop.toy.win]:[],pressed=>{if(typeof pressed==='boolean')desktop.toyPress(pressed);});
+  handler('area:open',settingsOnly,showAreaPicker);
+  handler('area:save',()=>[areaWindow].filter(Boolean),value=>enqueue(async()=>{
+    const candidate=normalizeSettings({...settings,roamArea:value}).roamArea;if(!candidate)throw new Error('Invalid settings.');
+    settings.roamArea=candidate;areaWindow.close();applySettings();await library.saveSettings(settings);
+  }));
+  handler('area:close',()=>[areaWindow].filter(Boolean),()=>areaWindow.close());
+  handler('layouts:save',settingsOnly,name=>enqueue(async()=>{
+    if(!settings.features.layouts||typeof name!=='string'||!name.trim()||settings.layouts.length>=20)throw Object.assign(new Error(),{key:'layoutLimit'});
+    for(const p of desktop.instances.values())desktop.remember(p);
+    settings.layouts.push({id:require('node:crypto').randomUUID(),name:name.trim().slice(0,50),primary:{petId:settings.petId,size:settings.size,behaviour:settings.behaviour,followCursor:settings.followCursor,primaryVisible:settings.primaryVisible,position:{...settings.position}},companions:structuredClone(settings.companions),placements:structuredClone(settings.placements),multiPet:settings.features.multiPet,personalities:settings.features.personalities});
+    await library.saveSettings(settings);broadcast();
+  }));
+  handler('layouts:restore',settingsOnly,id=>enqueue(async()=>{
+    const layout=settings.features.layouts&&settings.layouts.find(p=>p.id===id);if(!layout)throw new Error('Invalid settings.');
+    Object.assign(settings,layout.primary);if(!pets.some(p=>p.id===settings.petId))settings.petId='miso';
+    settings.companions=structuredClone(layout.companions).filter(c=>pets.some(p=>p.id===c.petId));settings.placements=structuredClone(layout.placements);settings.features.multiPet=layout.multiPet;settings.features.personalities=layout.personalities;settings.randomAnimations=settings.behaviour!=='quiet';applySettings(true);await library.saveSettings(settings);
+  }));
+  handler('layouts:remove',settingsOnly,id=>enqueue(async()=>{settings.layouts=settings.layouts.filter(p=>p.id!==id);await library.saveSettings(settings);broadcast();}));
+}
+function showAreaPicker(){
+  if(!settings.features.roaming)return;
+  if(areaWindow&&!areaWindow.isDestroyed()){areaWindow.focus();return;}
+  const display=screen.getAllDisplays().find(d=>String(d.id)===settings.roamArea?.displayId)||screen.getDisplayMatching(petWindow.getBounds());
+  areaWindow=new BrowserWindow({...display.workArea,frame:false,transparent:true,hasShadow:false,resizable:false,skipTaskbar:true,alwaysOnTop:true,webPreferences:windowOptions()});secure(areaWindow);
+  areaWindow.loadFile(rendererPath('area.html'),{query:{displayId:String(display.id)}});areaWindow.on('closed',()=>areaWindow=null);
 }
 app.on('second-instance', showSettings);
 app.on('activate', () => {if (library) showSettings();});
 app.on('window-all-closed', () => {});
-app.on('before-quit',()=>{quitting=true;clearInterval(timer);clearInterval(fullscreenTimer);fullscreenMonitor?.stop();globalShortcut.unregisterAll();});
+app.on('before-quit',()=>{quitting=true;desktop?.dispose();clearInterval(fullscreenTimer);fullscreenMonitor?.stop();globalShortcut.unregisterAll();});
 if (locked) app.whenReady().then(async () => {
   library = new Library(app.getPath('userData')); await library.init();
-  settings = await library.settings(); pets = await library.list();
+  settings = await library.settings(); await reloadPets();
   fullscreenMonitor=new FullscreenMonitor();
-  fullscreenMonitor.on('change',({fullscreen,locked})=>{const changed=fullscreenHidden!==fullscreen||!activityReady;activityReady=true;fullscreenHidden=fullscreen;if(locked)screenAwake=false;if(!settings.hideFullscreen||locked||!fullscreenMonitor.available)configureFullscreen();if(changed||locked||!fullscreenMonitor.available)refreshActivity();});
+  fullscreenMonitor.on('change',({fullscreen,locked})=>{
+    const changed=!activityReady||fullscreenDisplays.has(fullscreenQuery)!==fullscreen;activityReady=true;
+    if(fullscreen)fullscreenDisplays.add(fullscreenQuery);else fullscreenDisplays.delete(fullscreenQuery);
+    fullscreenHidden=desktop?fullscreenDisplays.has(String(screen.getDisplayMatching(petWindow.getBounds()).id)):false;
+    if(locked)screenAwake=false;if(!settings.hideFullscreen||locked||!fullscreenMonitor.available)configureFullscreen();
+    if(changed||locked||!fullscreenMonitor.available)refreshActivity();
+  });
   activityReady=!fullscreenMonitor.available;
   const awake=value=>{screenAwake=value;configureFullscreen();refreshActivity();};
   powerMonitor.on('suspend',()=>awake(false));powerMonitor.on('lock-screen',()=>awake(false));
@@ -335,14 +304,8 @@ if (locked) app.whenReady().then(async () => {
       return new Response(response.body, {status: response.status, headers});
     } catch { return new Response('Not found', {status: 404}); }
   });
-  petWindow = new BrowserWindow({...dimensions(), frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false, resizable: false, maximizable: false, minimizable: false, fullscreenable: false, skipTaskbar: true, show: false, title: 'Petex pet', webPreferences: windowOptions()});
-  secure(petWindow);
-  petWindow.setIgnoreMouseEvents(true, {forward: true});
-  petWindow.on('close', e => {if (!quitting) {e.preventDefault(); petWindow.hide();}});
-  configureIPC();
-  await petWindow.loadFile(rendererPath('pet.html'));
-  if (!settings.position) resetPosition();
-  applySettings();
+  desktop=new DesktopPets({getState:()=>({settings,pets,screenAwake,fullscreenDisplays}),secure,windowOptions,onChange:broadcast,onSave:()=>enqueue(()=>library.saveSettings(settings))});
+  petWindow=desktop.primary.win;configureIPC();await desktop.primary.ready;applySettings();
   function trayIcon() {
     const file = process.platform === 'darwin' ? 'trayTemplate.png' : nativeTheme.shouldUseDarkColorsForSystemIntegratedUI ? 'trayLight.png' : 'tray.png';
     const icon = nativeImage.createFromPath(path.join(__dirname, 'assets', file));
@@ -355,9 +318,10 @@ if (locked) app.whenReady().then(async () => {
   tray.on('double-click', showSettings);
   updateTray();
   if (process.platform === 'darwin') app.dock.hide();
-  updateApplicationMenu();updateCursorSchedule();
+  updateApplicationMenu();desktop.schedule();
   if(fullscreenMonitor.available)checkFullscreen(true);
-  screen.on('display-removed', () => enqueue(async () => {settings.position = clampPosition(petWindow.getBounds()); applySettings(); await library.saveSettings(settings);}));
-  screen.on('display-metrics-changed', () => applySettings());
+  screen.on('display-removed',()=>applySettings(true));
+  screen.on('display-added',()=>applySettings(true));
+  screen.on('display-metrics-changed',()=>applySettings(true));
   if (!process.argv.includes('--hidden') && !app.getLoginItemSettings().wasOpenedAtLogin) showSettings();
 }).catch(error => {dialog.showErrorBox(t('startError'),errorText(error)); app.quit();});

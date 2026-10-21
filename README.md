@@ -57,6 +57,22 @@ Static previews and paused pets stop scheduling draws. Hidden pets stop cursor p
 
 Settings and copied pets are stored in Electron's `userData` directory: `~/Library/Application Support/Pedex` on macOS and `%APPDATA%\Pedex` on Windows. There is no telemetry, account, remote content, or API key. Renderers are sandboxed with context isolation; the preload exposes only purpose-specific operations.
 
+## Optional extras
+
+The default is one pet. Open **More** in settings to enable any extras you want. Each feature has its own switch. **Turn off extras** returns to the simple experience and keeps saved preferences for later.
+
+- **Multiple pets** adds up to four pets to the desktop, including copies of the same pet. Dismissing one leaves its artwork in the library. Each pet can be shown or hidden independently.
+- **Pet interactions** lets nearby pets greet, follow, briefly chase, and jump together. Quiet pets sit these interactions out. **Greet** previews an interaction; dragging interrupts it.
+- **Individual preferences** gives additional pets their own size, behaviour and cursor gaze. Otherwise they share the main settings.
+- **Roaming area** chooses a display or lets you draw the area pets can occupy. Saved positions adapt when displays are disconnected or reconnected.
+- **Toys** adds a ball when you choose **Throw a ball**. Drag and release to throw it again. Active pets investigate it; the ball disappears after a short time or when pets are paused or hidden.
+- **Petting** reacts when you hold Shift and stroke a pet from side to side. Ordinary dragging still moves it.
+- **Daily routines** quiet automatic actions during your chosen local hours or after inactivity. Clicking and dragging remain available. Equal start and end hours disable the time window.
+- **Saved layouts** stores named groups, positions, sizes and behaviour. Restore or delete a layout whenever you like.
+- **Library tools** adds search, favourites and local renaming. Existing animation previews remain available.
+
+All of this runs locally. No accounts, telemetry, network services or additional access permissions are needed.
+
 ## Test and package
 
 ```sh
@@ -70,7 +86,7 @@ npm run test:packaged
 
 Builds land in `release/`. Build the macOS DMG / ZIP on macOS; build the Windows NSIS installer on Windows. The [Desktop packages workflow](https://github.com/iebb/petex/actions/workflows/build.yml) runs on pushes to `master`, pull requests, version tags, or manual dispatch. It builds macOS Apple Silicon, macOS Intel, and Windows x64 on native runners. Each job runs unit and desktop tests, builds installers, verifies packaged source and native libraries, then runs the desktop tests against the packaged executable. Installers are available in the workflow run’s artifacts. After all three jobs pass, pushes to master publish a GitHub Release with all five installers and SHA256SUMS.txt. Versions use major.minor.commit-height: edit the first two numbers in package.json manually; CI replaces the third with `git rev-list --count HEAD` using full history. Run `npm run version:ci` for the same version locally. Existing published versions are left unchanged. Version tags must match the computed version. The macOS bundle identifier is `ad.neko.petex`.
 
-GitHub downloads are unsigned. No in-app updater is configured.
+Release signing is optional in CI. Downloads remain unsigned until signing credentials are configured. No in-app updater is configured.
 
 For cross-packaging, install Sharp for the target first (for example, `npm install --no-save --os=win32 --cpu=x64 sharp`), then run the build. This replaces the host native dependency; restore it with `npm ci` before running local tests. The packaging hook rejects missing target binaries. Native libraries are unpacked as required by [Sharp’s Electron instructions](https://sharp.pixelplumbing.com/install/#electron).
 

@@ -16,6 +16,7 @@
   </section>
   <section aria-labelledby="collection-title">
     <div class="section-heading"><h2 id="collection-title"><span data-i18n="pets"></span> <span id="pet-count">1</span></h2><div class="footer-links"><button id="import-builtins" class="text-button" data-i18n="builtins"></button><button id="discover" class="text-button" data-i18n="discover"></button></div></div>
+    <div id="library-tools" class="library-tools" hidden><input id="pet-search" type="search" data-i18n-placeholder="searchPets" data-i18n-aria="searchPets"><label><input id="only-favourites" type="checkbox"><span data-i18n="favourites"></span></label><button id="favourite-pet" data-i18n="favourite"></button><input id="rename-pet" maxlength="80" data-i18n-aria="renamePet"><button id="rename-save" data-i18n="renamePet"></button></div>
     <div class="pet-list" id="pet-list" data-i18n-aria="choosePet"></div>
     <div class="import-note"><span class="drop-label" data-i18n="dropFolder"></span><button id="import-file" class="text-button" data-i18n="importFile"></button><span class="file-types">ZIP · JSON · PNG · WebP</span></div>
   </section>
@@ -34,6 +35,28 @@
       <label class="setting select-setting"><span data-i18n="language"></span><select id="language"></select></label>
     </div>
   </section>
+  <details id="more"><summary data-i18n="more"></summary>
+    <div class="section-heading"><p class="muted" data-i18n="extrasHint"></p><button id="extras-off" class="text-button" data-i18n="extrasOff"></button></div>
+    <div class="preferences-grid feature-switches"><label class="setting toggle-setting"><span data-i18n="multiPet"></span><input id="feature-multiPet" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+<label class="setting toggle-setting"><span data-i18n="interactions"></span><input id="feature-interactions" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+<label class="setting toggle-setting"><span data-i18n="personalities"></span><input id="feature-personalities" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+<label class="setting toggle-setting"><span data-i18n="roaming"></span><input id="feature-roaming" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+<label class="setting toggle-setting"><span data-i18n="toys"></span><input id="feature-toys" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+<label class="setting toggle-setting"><span data-i18n="petting"></span><input id="feature-petting" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+<label class="setting toggle-setting"><span data-i18n="routines"></span><input id="feature-routines" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+<label class="setting toggle-setting"><span data-i18n="layouts"></span><input id="feature-layouts" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label>
+<label class="setting toggle-setting"><span data-i18n="libraryTools"></span><input id="feature-libraryTools" type="checkbox" role="switch"><span class="switch" aria-hidden="true"></span></label></div>
+    <section id="companions-panel" class="extra-panel" hidden>
+      <div class="section-heading"><h2 data-i18n="companions"></h2><button id="interact-now" data-i18n="greet"></button></div>
+      <div id="companion-list"></div>
+      <div class="inline-controls"><select id="companion-pet" data-i18n-aria="choosePet"></select><button id="add-companion" data-i18n="addPet"></button><span id="companion-count" class="muted"></span></div>
+    </section>
+    <section id="roaming-panel" class="extra-panel" hidden><h2 data-i18n="roaming"></h2><div class="inline-controls"><select id="roam-display" data-i18n-aria="display"></select><button id="draw-area" data-i18n="drawArea"></button><button id="whole-display" data-i18n="wholeDisplay"></button></div></section>
+    <section id="toys-panel" class="extra-panel" hidden><button id="throw-ball" data-i18n="throwBall"></button><span class="muted" data-i18n="ballHint"></span></section>
+    <p id="petting-hint" class="muted extra-panel" data-i18n="pettingHint" hidden></p>
+    <section id="routines-panel" class="extra-panel" hidden><h2 data-i18n="routineHours"></h2><div class="inline-controls"><label><span data-i18n="fromHour"></span> <input id="routine-start" type="number" min="0" max="23" data-i18n-aria="fromHour"></label><label><span data-i18n="toHour"></span> <input id="routine-end" type="number" min="0" max="23" data-i18n-aria="toHour"></label><label><span data-i18n="idleMinutes"></span> <input id="routine-idle" type="number" min="1" max="120" data-i18n-aria="idleMinutes"></label></div><p class="muted" data-i18n="routineHint"></p></section>
+    <section id="layouts-panel" class="extra-panel" hidden><h2 data-i18n="layouts"></h2><div class="inline-controls"><input id="layout-name" maxlength="50" data-i18n-placeholder="layoutName" data-i18n-aria="layoutName"><button id="save-layout" data-i18n="saveLayout"></button></div><div class="inline-controls"><select id="layout-select" data-i18n-aria="layouts"></select><button id="restore-layout" data-i18n="restoreLayout"></button><button id="remove-layout" data-i18n="delete"></button></div></section>
+  </details>
   <footer><div class="footer-links"><button class="text-button" id="home" data-i18n="reset"></button><button class="text-button" id="open-folder" data-i18n="folder" data-i18n-title="folderTitle"></button><button class="text-button" id="backup" data-i18n="backup"></button><a id="github" class="text-button" href="https://github.com/iebb/petex">GitHub</a></div><button id="done" data-i18n="done"></button></footer>
 </main>
 <div id="toast" role="status" aria-live="polite" hidden></div>

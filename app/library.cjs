@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const AdmZip = require('adm-zip');
 const sharp = require('sharp');
 const {languages} = require('./locales.js');
+const {normalizeExtras} = require('./preferences.cjs');
 
 const MAX_IMAGE = 32 * 1024 * 1024;
 const MAX_MANIFEST = 64 * 1024;
@@ -19,6 +20,7 @@ function normalizeSettings(input = {}) {
     behaviour, randomAnimations: behaviour !== 'quiet' && input.randomAnimations !== false,
     language: input.language === 'auto' || Object.hasOwn(languages,input.language) ? input.language : 'auto',
     position: input.position && Number.isFinite(input.position.x) && Number.isFinite(input.position.y) ? {x: Math.round(input.position.x), y: Math.round(input.position.y)} : null,
+    ...normalizeExtras(input),
   };
 }
 function safeRelative(value) {
@@ -90,7 +92,7 @@ class Library {
   constructor(root) { this.root = root; this.petsPath = path.join(root, 'pets'); }
   async init() { await fs.mkdir(this.petsPath, {recursive: true}); }
   async settings() {
-    try { return normalizeSettings(JSON.parse(await fs.readFile(path.join(this.root, 'settings.json'), 'utf8'))); } catch { return {...DEFAULTS}; }
+    try { return normalizeSettings(JSON.parse(await fs.readFile(path.join(this.root, 'settings.json'), 'utf8'))); } catch { return normalizeSettings(); }
   }
   async saveSettings(settings) {
     const file = path.join(this.root, 'settings.json');

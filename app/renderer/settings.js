@@ -8,6 +8,7 @@ function localize() {
  for(const node of document.querySelectorAll('[data-i18n]'))node.textContent=t(node.dataset.i18n);
  for(const node of document.querySelectorAll('[data-i18n-aria]'))node.setAttribute('aria-label',t(node.dataset.i18nAria));
  for(const node of document.querySelectorAll('[data-i18n-title]'))node.title=t(node.dataset.i18nTitle);
+ for(const node of document.querySelectorAll('[data-i18n-placeholder]'))node.placeholder=t(node.dataset.i18nPlaceholder);
  $('language').replaceChildren(...Object.entries({auto:t('automatic'),...languages}).map(([value,text])=>{const option=document.createElement('option');option.value=value;option.textContent=text;return option;}));
 }
 const hero=new PetSprite($('hero-pet'));
@@ -71,6 +72,7 @@ function render(next) {
     const plus=document.createElement('span');plus.textContent='+';const label=document.createElement('span');label.className='pet-name';label.textContent=t('importFolder');add.append(plus,label);add.onclick=()=>importPets('folder');$('pet-list').append(add);
   }
   for(const card of cards){card.sprite.active=state.screenAwake;const selected=card.button.dataset.petId===settings.petId;card.button.classList.toggle('selected',selected);card.button.setAttribute('aria-pressed',String(selected));card.tick.hidden=!selected;}
+  renderExtras();filterPets();
 }
 function importMessage(results){
   if(!results?.length)return;
@@ -108,3 +110,58 @@ window.addEventListener('dragleave',event=>{event.preventDefault();if(--depth<=0
 window.addEventListener('drop',async event=>{event.preventDefault();depth=0;$('drop-overlay').hidden=true;if(busy)return;busy=true;try{importMessage(await run(()=>api.importDropped(event.dataTransfer.files)));}finally{busy=false;}});
 api.onState(render);
 run(async()=>render(await api.getState()));
+
+const featureKeys=['multiPet','interactions','personalities','roaming','toys','petting','routines','layouts','libraryTools'];
+let companionKey='',displayKey='',layoutKey='';
+function options(select,entries){select.replaceChildren(...entries.map(([value,label])=>{const option=document.createElement('option');option.value=value;option.textContent=label;return option;}));}
+function renderExtras(){
+  const {settings,pets}=state,f=settings.features;
+  for(const key of featureKeys)$('feature-'+key).checked=f[key];
+  for(const [panel,feature] of [['companions-panel','multiPet'],['roaming-panel','roaming'],['toys-panel','toys'],['petting-hint','petting'],['routines-panel','routines'],['layouts-panel','layouts'],['library-tools','libraryTools']])$(panel).hidden=!f[feature];
+  $('interact-now').hidden=!f.interactions;$('interact-now').disabled=!settings.motion||!settings.visible||!settings.companions.some(c=>c.visible);
+  $('throw-ball').disabled=!settings.motion||!settings.visible;
+  $('extras-off').disabled=!Object.values(f).some(Boolean);
+  const key=JSON.stringify([state.locale,pets.map(p=>[p.id,p.displayName]),settings.petId,settings.primaryVisible,f.personalities,settings.companions.map(c=>[c.id,c.petId,c.size,c.behaviour,c.visible,c.followCursor])]);
+  if(key!==companionKey){
+    companionKey=key;options($('companion-pet'),pets.map(p=>[p.id,p.displayName]));$('companion-list').replaceChildren();
+    const primary=document.createElement('div');primary.className='companion-row';const name=document.createElement('span');name.textContent=pets.find(p=>p.id===settings.petId)?.displayName;const visible=document.createElement('label'),box=document.createElement('input');box.type='checkbox';box.checked=settings.primaryVisible;box.id='primary-visible';box.onchange=()=>update({primaryVisible:box.checked});visible.append(box,document.createTextNode(t('showPet')));primary.append(name,visible);$('companion-list').append(primary);
+    for(const item of settings.companions){
+      const row=document.createElement('div');row.className='companion-row';row.dataset.instanceId=item.id;
+      const petSelect=document.createElement('select');petSelect.setAttribute('aria-label',t('choosePet'));options(petSelect,pets.map(p=>[p.id,p.displayName]));petSelect.value=item.petId;petSelect.onchange=()=>run(()=>api.updateCompanion(item.id,{petId:petSelect.value}));row.append(petSelect);
+      const visible=document.createElement('label'),checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=item.visible;checkbox.onchange=()=>run(()=>api.updateCompanion(item.id,{visible:checkbox.checked}));visible.append(checkbox,document.createTextNode(t('showPet')));row.append(visible);
+      if(f.personalities){
+        const size=document.createElement('input');size.type='number';size.min=48;size.max=240;size.step=8;size.value=item.size;size.setAttribute('aria-label',t('size'));size.onchange=()=>run(()=>api.updateCompanion(item.id,{size:Number(size.value)}));row.append(size);
+        const behaviour=document.createElement('select');behaviour.setAttribute('aria-label',t('behaviour'));options(behaviour,['quiet','calm','playful'].map(value=>[value,t(value)]));behaviour.value=item.behaviour;behaviour.onchange=()=>run(()=>api.updateCompanion(item.id,{behaviour:behaviour.value}));row.append(behaviour);
+        const gaze=document.createElement('label'),gazeBox=document.createElement('input');gazeBox.type='checkbox';gazeBox.checked=item.followCursor;gazeBox.onchange=()=>run(()=>api.updateCompanion(item.id,{followCursor:gazeBox.checked}));gaze.append(gazeBox,document.createTextNode(t('followCursor')));row.append(gaze);
+      }
+      const remove=document.createElement('button');remove.textContent=t('dismissPet');remove.onclick=()=>run(()=>api.removeCompanion(item.id));row.append(remove);$('companion-list').append(row);
+    }
+  }
+  $('add-companion').disabled=settings.companions.length>=3;$('companion-count').textContent=t('petCount',{count:1+settings.companions.length});
+  const dk=JSON.stringify([state.locale,state.displays]);if(dk!==displayKey){displayKey=dk;options($('roam-display'),state.displays.map((d,i)=>[d.id,d.name||t('displayNumber',{number:i+1})]));}
+  $('roam-display').value=settings.roamArea?.displayId||state.displays[0]?.id;
+  for(const [id,key] of [['routine-start','start'],['routine-end','end'],['routine-idle','idleMinutes']])if(document.activeElement!==$(id))$(id).value=settings.routine[key];
+  const lk=JSON.stringify([state.locale,settings.layouts.map(p=>[p.id,p.name])]);if(lk!==layoutKey){layoutKey=lk;options($('layout-select'),settings.layouts.map(p=>[p.id,p.name]));}
+  $('restore-layout').disabled=$('remove-layout').disabled=!settings.layouts.length;$('save-layout').disabled=settings.layouts.length>=20;
+  $('favourite-pet').setAttribute('aria-pressed',String(settings.favourites.includes(settings.petId)));$('favourite-pet').textContent=t(settings.favourites.includes(settings.petId)?'unfavourite':'favourite');
+  if(document.activeElement!==$('rename-pet'))$('rename-pet').value=pets.find(p=>p.id===settings.petId)?.displayName||'';
+}
+function filterPets(){
+  if(!state)return;const enabled=state.settings.features.libraryTools,query=enabled?$('pet-search').value.trim().toLocaleLowerCase():'';
+  for(const card of cards){const pet=state.pets.find(p=>p.id===card.button.dataset.petId);card.button.hidden=enabled&&(!pet.displayName.toLocaleLowerCase().includes(query)||($('only-favourites').checked&&!state.settings.favourites.includes(pet.id)));}
+}
+for(const key of featureKeys)$('feature-'+key).onchange=()=>update({features:{...state.settings.features,[key]:$('feature-'+key).checked}});
+$('extras-off').onclick=()=>update({features:Object.fromEntries(featureKeys.map(key=>[key,false]))});
+$('add-companion').onclick=()=>run(()=>api.addCompanion($('companion-pet').value));
+$('interact-now').onclick=()=>run(()=>api.interact());
+$('throw-ball').onclick=()=>run(()=>api.throwBall());
+$('draw-area').onclick=()=>run(()=>api.chooseArea());
+$('roam-display').onchange=()=>update({roamArea:{displayId:$('roam-display').value,rect:null}});
+$('whole-display').onclick=()=>update({roamArea:{displayId:$('roam-display').value,rect:null}});
+for(const [id,key] of [['routine-start','start'],['routine-end','end'],['routine-idle','idleMinutes']])$(id).onchange=()=>update({routine:{...state.settings.routine,[key]:Number($(id).value)}});
+$('save-layout').onclick=async()=>{if(!$('layout-name').value.trim()){$('layout-name').focus();return;}if(await run(async()=>{await api.saveLayout($('layout-name').value);return true;})){$('layout-name').value='';toast(t('layoutSaved'));}};
+$('restore-layout').onclick=()=>run(()=>api.restoreLayout($('layout-select').value));
+$('remove-layout').onclick=()=>run(()=>api.removeLayout($('layout-select').value));
+$('pet-search').oninput=filterPets;$('only-favourites').onchange=filterPets;
+$('favourite-pet').onclick=()=>{const favourites=new Set(state.settings.favourites),id=state.settings.petId;if(favourites.has(id))favourites.delete(id);else favourites.add(id);update({favourites:[...favourites]});};
+$('rename-save').onclick=()=>update({petNames:{...state.settings.petNames,[state.settings.petId]:$('rename-pet').value}});

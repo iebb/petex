@@ -2,12 +2,13 @@ import {PetSprite, ANIMATIONS, RandomAnimations} from './sprite.js';
 const api=window.pedex,canvas=document.getElementById('pet'),sprite=new PetSprite(canvas);
 const randomAnimations=new RandomAnimations();
 const HOLD_MS=550,DRAG_THRESHOLD=6;
-let settings,selectedPet,active=false,down=null,dragging=false,lastHit=null,actionUntil=0,holdTimer=null,behaviourTimer=null;
+let settings,selectedPet,active=false,down=null,dragging=false,lastHit=null,actionUntil=0,holdTimer=null,behaviourTimer=null,socialUntil=0,strokes=[],lastStroke=null,strokeDirection=0;
 function cancelHold(){clearTimeout(holdTimer);holdTimer=null;}
 function plan() {
   clearTimeout(behaviourTimer);behaviourTimer=null;
   if(!settings||!active||!settings.motion||down)return;
   const now=performance.now();
+  if(now<socialUntil){behaviourTimer=setTimeout(plan,Math.max(1,socialUntil-now));return;}
   if(now<actionUntil){behaviourTimer=setTimeout(plan,Math.max(1,actionUntil-now));return;}
   if(sprite.state!=='idle'){sprite.action('idle');actionUntil=0;}
   const next=randomAnimations.next(selectedPet,now,settings.randomAnimations,false,settings.behaviour);
@@ -19,10 +20,11 @@ function plan() {
   if(deadline!==null)behaviourTimer=setTimeout(plan,Math.max(1,deadline-now));
 }
 function resetBehaviour(){randomAnimations.reset();plan();}
-function action(name,fromPress=false){
+function action(value,fromPress=false){
+  const name=typeof value==='string'?value:value?.name;
   if(!settings?.motion||!active||!ANIMATIONS[name]||dragging||(down&&!fromPress))return;
   sprite.action(name);sprite.gaze=null;
-  actionUntil=performance.now()+ANIMATIONS[name].durations.reduce((a,b)=>a+b,0);
+  actionUntil=performance.now()+(value?.duration||ANIMATIONS[name].durations.reduce((a,b)=>a+b,0));
   resetBehaviour();
 }
 function render(state){
@@ -36,6 +38,10 @@ function render(state){
   if(changed){actionUntil=0;sprite.action('idle');resetBehaviour();}
 }
 api.onState(render);api.getState().then(render);api.onAction(name=>action(name));
+api.onStroke(()=>{canvas.classList.remove('petted');void canvas.offsetWidth;canvas.classList.add('petted');});
+canvas.addEventListener('animationend',()=>canvas.classList.remove('petted'));
+api.onSocialStart(duration=>{socialUntil=performance.now()+duration;clearTimeout(behaviourTimer);behaviourTimer=setTimeout(plan,duration);});
+api.onSocialEnd(()=>{socialUntil=0;sprite.gaze=null;resetBehaviour();});
 api.onCursor(cursor=>{
   if(!settings||!active)return;
   const rect=canvas.getBoundingClientRect(),x=cursor.x-rect.x,y=cursor.y-rect.y;
@@ -46,7 +52,7 @@ api.onCursor(cursor=>{
     if(sprite.state!==state)sprite.action(state);
   }
   const gx=x-rect.width/2,gy=y-rect.height*.45;
-  sprite.gaze=isDragging?cursor.dragGaze:!cursor.walking&&settings.followCursor&&settings.motion&&Math.hypot(gx,gy)>35&&Math.hypot(gx,gy)<1100?{x:gx,y:gy}:null;
+  sprite.gaze=isDragging?cursor.dragGaze:cursor.socialGaze&&!cursor.walking?cursor.socialGaze:!cursor.walking&&settings.followCursor&&settings.motion&&Math.hypot(gx,gy)>35&&Math.hypot(gx,gy)<1100?{x:gx,y:gy}:null;
   let hit=false;
   if(x>=0&&y>=0&&x<rect.width&&y<rect.height){try{hit=sprite.ctx.getImageData(Math.floor(x/rect.width*384),Math.floor(y/rect.height*416),1,1).data[3]>30;}catch{hit=true;}}
   if(hit!==lastHit&&!down){lastHit=hit;api.hit(hit).catch(()=>{});}
@@ -59,6 +65,12 @@ canvas.addEventListener('pointerdown',event=>{
   holdTimer=setTimeout(()=>{if(!down||down.moved||dragging)return;down.longPressed=true;action('jumping',true);},HOLD_MS);
 });
 canvas.addEventListener('pointermove',event=>{if(down&&Math.hypot(event.screenX-down.x,event.screenY-down.y)>=DRAG_THRESHOLD){down.moved=true;cancelHold();}});
+canvas.addEventListener('pointermove',event=>{
+  if(!settings?.features.petting||!settings.motion||!event.shiftKey||event.buttons||down){lastStroke=null;strokes=[];return;}
+  const now=performance.now();
+  if(lastStroke!==null&&Math.abs(event.clientX-lastStroke)>5){const direction=Math.sign(event.clientX-lastStroke);if(direction!==strokeDirection){strokes.push(now);strokeDirection=direction;}strokes=strokes.filter(at=>now-at<1400);if(strokes.length>=4){api.stroke().catch(()=>{});strokes=[];}}
+  lastStroke=event.clientX;
+});
 function finishPointer(event,cancelled=false){
   if(!down)return;
   const press=down,moved=dragging||press.moved;down=null;dragging=false;cancelHold();

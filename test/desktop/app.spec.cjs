@@ -203,6 +203,8 @@ test('changes every app language and translates native menus and import errors',
     await expect(settingsPage.locator('#done')).toHaveText(messages[language].done);
     await expect(settingsPage.locator('#behaviour option[value="calm"]')).toHaveText(messages[language].calm);
     await expect(settingsPage.locator('#play')).toHaveText(messages[language].play);
+    const fits=await settingsPage.locator('#done').evaluate(node=>node.getBoundingClientRect().bottom<=innerHeight);
+    expect(fits).toBe(true);
     const menuLabel=await application.evaluate(()=>globalThis.testTray.items[2].label);
     expect(menuLabel).toBe(messages[language].settings);
   }
@@ -308,4 +310,104 @@ test('hides for another fullscreen app and restores the pet after it closes',asy
     if(child) {const ended=new Promise(resolve=>child.once('exit',resolve));child.kill();await ended;}
   }
   await expect.poll(()=>settingsPage.evaluate(async()=>(await window.pedex.getState()).petActive),{timeout:10000}).toBe(true);
+});
+
+const readState=()=>settingsPage.evaluate(()=>window.pedex.getState());
+async function extras(features){await settingsPage.evaluate(features=>window.pedex.updateSettings({features}),features);}
+async function addMiso(){await settingsPage.evaluate(()=>window.pedex.addCompanion('miso'));await expect.poll(async()=>(await readState()).instances.length).toBeGreaterThan(1);}
+test('all extras start off, stay behind More, and can return to a single pet',async()=>{
+  const initial=await readState();expect(Object.values(initial.settings.features).every(value=>value===false)).toBe(true);
+  await expect(settingsPage.locator('#more')).not.toHaveAttribute('open','');await expect(settingsPage.locator('#add-companion')).toBeHidden();
+  await settingsPage.locator('#more summary').click();await settingsPage.locator('#feature-multiPet').check({force:true});await addMiso();
+  await expect.poll(async()=>(await readState()).instances.length).toBe(2);
+  await settingsPage.locator('#extras-off').click();
+  await expect.poll(async()=>(await readState()).instances.length).toBe(1);expect((await readState()).settings.companions).toHaveLength(1);
+  await expect.poll(()=>application.windows().length).toBe(2);
+});
+test('supports four independently configured pets, independent visibility and a strict limit',async()=>{
+  await extras({multiPet:true,personalities:true});await addMiso();await addMiso();await addMiso();
+  await expect.poll(async()=>(await readState()).instances.length).toBe(4);
+  const denied=await settingsPage.evaluate(async()=>{try{await window.pedex.addCompanion('miso');return false;}catch{return true;}});expect(denied).toBe(true);
+  const id=(await readState()).settings.companions[0].id;
+  await settingsPage.evaluate(id=>window.pedex.updateCompanion(id,{size:48,behaviour:'quiet',visible:false}),id);
+  await expect.poll(async()=>(await readState()).instances.find(p=>p.id===id)?.size).toBe(48);
+  const state=await readState();expect(state.instances.find(p=>p.id===id).active).toBe(false);expect(state.instances.find(p=>p.id==='primary').size).toBe(160);expect(state.instances.find(p=>p.id==='primary').active).toBe(true);
+  await settingsPage.evaluate(()=>window.pedex.updateSettings({primaryVisible:false}));expect((await readState()).instances.find(p=>p.id==='primary').active).toBe(false);expect((await readState()).instances.filter(p=>p.active)).toHaveLength(2);
+  await application.evaluate(({powerMonitor})=>powerMonitor.emit('lock-screen'));expect((await readState()).instances.every(p=>!p.active)).toBe(true);
+  await application.evaluate(({powerMonitor})=>powerMonitor.emit('unlock-screen'));expect((await readState()).instances.filter(p=>p.active)).toHaveLength(2);
+  await extras({});await expect.poll(async()=>(await readState()).instances.length).toBe(1);expect((await readState()).instances[0].active).toBe(true);
+});
+test('dragging a second pet moves only that instance and keeps its IPC isolated',async()=>{
+  await extras({multiPet:true});await addMiso();
+  await expect.poll(()=>application.windows().filter(p=>p.url().endsWith('pet.html')).length).toBe(2);
+  const extra=application.windows().filter(p=>p.url().endsWith('pet.html')).find(p=>p!==petPage);
+  const state=await extra.evaluate(()=>window.pedex.getState()),id=state.instanceId;
+  const before=(await readState()).instances;
+  await application.evaluate(({screen},bounds)=>{globalThis.extraCursor={x:bounds.x+60,y:bounds.y+70};screen.getCursorScreenPoint=()=>({...globalThis.extraCursor});},before.find(p=>p.id===id).bounds);
+  await extra.evaluate(()=>window.pedex.pressStart());await application.evaluate(()=>{globalThis.extraCursor.x-=60;});
+  await expect.poll(async()=>(await readState()).instances.find(p=>p.id===id).bounds.x).toBe(before.find(p=>p.id===id).bounds.x-60);
+  await extra.evaluate(()=>window.pedex.pressEnd());expect((await readState()).instances.find(p=>p.id==='primary').bounds).toEqual(before.find(p=>p.id==='primary').bounds);
+  expect(await extra.evaluate(async()=>{try{await window.pedex.updateSettings({size:240});return false;}catch{return true;}})).toBe(true);
+});
+test('social greetings are opt-in, coordinate both pets, and stop when disabled',async()=>{
+  await extras({multiPet:true});await addMiso();expect(await settingsPage.evaluate(()=>window.pedex.interact())).toBe(false);
+  await extras({multiPet:true,interactions:true});
+  await expect.poll(()=>application.windows().filter(p=>p.url().endsWith('pet.html')).length).toBe(2);
+  const pages=application.windows().filter(p=>p.url().endsWith('pet.html'));
+  for(const page of pages)await page.evaluate(()=>{globalThis.socialActions=[];window.pedex.onAction(value=>globalThis.socialActions.push(typeof value==='string'?value:value.name));});
+  expect(await settingsPage.evaluate(()=>window.pedex.interact())).toBe(true);
+  for(const page of pages)await expect.poll(()=>page.evaluate(()=>globalThis.socialActions.includes('waving')),{timeout:7000}).toBe(true);
+  await extras({multiPet:true,interactions:false});expect(await settingsPage.evaluate(()=>window.pedex.interact())).toBe(false);
+});
+test('a toy appears only when requested and disappears when animations pause',async()=>{
+  expect(await settingsPage.evaluate(()=>window.pedex.throwBall())).toBe(false);
+  await extras({toys:true});expect(application.windows().some(p=>p.url().endsWith('toy.html'))).toBe(false);
+  expect(await settingsPage.evaluate(()=>window.pedex.throwBall())).toBe(true);
+  await expect.poll(()=>application.windows().some(p=>p.url().endsWith('toy.html'))).toBe(true);
+  const toy=application.windows().find(p=>p.url().endsWith('toy.html'));await expect.poll(()=>toy.locator('canvas').evaluate(n=>n.getContext('2d').getImageData(32,32,1,1).data[3])).toBe(255);
+  await settingsPage.evaluate(()=>window.pedex.updateSettings({motion:false}));await expect.poll(()=>application.windows().some(p=>p.url().endsWith('toy.html'))).toBe(false);
+});
+test('Shift strokes are optional, leave dragging intact and have a cooldown',async()=>{
+  await preparePointerTest();expect(await petPage.evaluate(()=>window.pedex.stroke())).toBe(false);
+  await extras({petting:true});
+  await petPage.keyboard.down('Shift');for(const x of [70,125,70,125,70,125])await petPage.mouse.move(x,90);await petPage.keyboard.up('Shift');
+  await expect(petPage.locator('canvas')).toHaveClass(/petted/);expect(await petPage.evaluate(()=>window.pedex.stroke())).toBe(false);
+  await extras({});expect(await petPage.evaluate(()=>window.pedex.stroke())).toBe(false);
+});
+test('routines quiet automatic actions without changing the chosen behaviour',async()=>{
+  await application.evaluate(({powerMonitor})=>{powerMonitor.getSystemIdleTime=()=>120;});
+  await settingsPage.evaluate(()=>window.pedex.updateSettings({features:{routines:true},routine:{start:0,end:0,idleMinutes:1}}));
+  await expect.poll(async()=>(await readState()).resting).toBe(true);
+  expect((await readState()).settings.behaviour).toBe('calm');expect((await petPage.evaluate(()=>window.pedex.getState())).settings.behaviour).toBe('quiet');
+  await extras({});expect((await readState()).resting).toBe(false);expect((await petPage.evaluate(()=>window.pedex.getState())).settings.behaviour).toBe('calm');
+});
+test('a user-drawn roaming area constrains movement and can be turned off',async()=>{
+  await extras({roaming:true});await settingsPage.evaluate(()=>window.pedex.chooseArea());
+  await expect.poll(()=>application.windows().some(p=>new URL(p.url()).pathname.endsWith('area.html'))).toBe(true);
+  const area=application.windows().find(p=>new URL(p.url()).pathname.endsWith('area.html'));
+  await area.mouse.move(80,140);await area.mouse.down();await area.mouse.move(500,490);await area.mouse.up();
+  await expect(area.locator('#save')).toBeEnabled();await area.locator('#save').click({noWaitAfter:true}).catch(e=>{if(!area.isClosed())throw e;});
+  await expect.poll(async()=>(await readState()).settings.roamArea?.rect?.width||0).toBeGreaterThan(0);
+  const state=await readState(),display=state.displays.find(d=>d.id===state.settings.roamArea.displayId),r=state.settings.roamArea.rect,b=state.instances[0].bounds;
+  expect(b.x).toBeGreaterThanOrEqual(Math.floor(display.workArea.x+display.workArea.width*r.x));expect(b.y).toBeGreaterThanOrEqual(Math.floor(display.workArea.y+display.workArea.height*r.y));
+  expect(b.x+b.width).toBeLessThanOrEqual(Math.ceil(display.workArea.x+display.workArea.width*(r.x+r.width))+1);
+  await extras({});expect((await readState()).settings.features.roaming).toBe(false);
+});
+test('library tools search, favourite and rename locally without adding permanent clutter',async()=>{
+  await settingsPage.getByRole('button',{name:'Import from Codex'}).click();await expect(settingsPage.locator('h1')).toHaveText('Sunny test pet');
+  await extras({libraryTools:true});await settingsPage.locator('#more summary').click();
+  await settingsPage.locator('#rename-pet').fill('Nori');await settingsPage.locator('#rename-save').click();await expect(settingsPage.locator('h1')).toHaveText('Nori');
+  await settingsPage.locator('#favourite-pet').click();await settingsPage.locator('#only-favourites').check();await expect(settingsPage.getByRole('button',{name:'Choose Miso',exact:true})).toBeHidden();
+  await settingsPage.locator('#pet-search').fill('missing');await expect(settingsPage.getByRole('button',{name:'Choose Nori',exact:true})).toBeHidden();
+  await extras({});await expect(settingsPage.locator('#library-tools')).toBeHidden();await expect(settingsPage.getByRole('button',{name:'Choose Miso',exact:true})).toBeVisible();await expect(settingsPage.getByRole('button',{name:'Choose Nori',exact:true})).toBeVisible();
+});
+test('saved layouts restore the pet group and preferences, and can be deleted',async()=>{
+  await extras({multiPet:true,personalities:true,layouts:true});await addMiso();
+  await settingsPage.evaluate(()=>window.pedex.updateSettings({size:72}));
+  const id=(await readState()).settings.companions[0].id;await settingsPage.evaluate(id=>window.pedex.updateCompanion(id,{size:96,behaviour:'quiet'}),id);
+  await settingsPage.evaluate(()=>window.pedex.saveLayout('Desk'));const layout=(await readState()).settings.layouts[0];expect(layout.name).toBe('Desk');
+  await settingsPage.evaluate(id=>window.pedex.removeCompanion(id),id);await settingsPage.evaluate(()=>window.pedex.updateSettings({size:240}));
+  await settingsPage.evaluate(id=>window.pedex.restoreLayout(id),layout.id);
+  await expect.poll(async()=>(await readState()).instances.length).toBe(2);const restored=await readState();expect(restored.settings.size).toBe(72);expect(restored.instances.find(p=>p.id===id).size).toBe(96);expect(restored.instances.find(p=>p.id===id).behaviour).toBe('quiet');
+  await settingsPage.evaluate(id=>window.pedex.removeLayout(id),layout.id);expect((await readState()).settings.layouts).toHaveLength(0);
 });
