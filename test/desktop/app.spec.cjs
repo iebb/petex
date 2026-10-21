@@ -25,7 +25,21 @@ test.beforeEach(async()=>{
   await application.evaluate(({powerMonitor})=>powerMonitor.emit('unlock-screen'));
   await expect(settingsPage.locator('h1')).toHaveText('Miso');
 });
-test.afterEach(async()=>{await application?.close();await fs.rm(root,{recursive:true,force:true});});
+test.afterEach(async()=>{
+  if(application){
+    const current=application,child=current.process();application=null;
+    let signal,timer;
+    const quit=new Promise((resolve,reject)=>{signal=resolve;timer=setTimeout(()=>reject(new Error('The app did not reach normal shutdown.')),10000);});
+    const consoleMessage=message=>{if(message.text()==='petex-test:will-quit')signal();};
+    current.on('console',consoleMessage);current.once('close',signal);
+    try{
+      // Exercise the app's Quit action before Playwright disconnects its debugger.
+      await current.evaluate(({app,Menu})=>{app.once('will-quit',()=>console.log('petex-test:will-quit'));setImmediate(()=>{const item=Menu.getApplicationMenu()?.items[0]?.submenu?.items.at(-1);if(item)item.click();else app.quit();});}).catch(()=>{});
+      await quit;await current.close();await expect.poll(()=>child.exitCode).toBe(0);
+    }finally{clearTimeout(timer);current.removeListener('console',consoleMessage);current.removeListener('close',signal);}
+  }
+  await fs.rm(root,{recursive:true,force:true});
+});
 test('renders the native companion, settings, and working controls',async()=>{
   await expect(settingsPage.getByRole('button',{name:'Choose Miso'})).toHaveAttribute('aria-pressed','true');
   const before=await petPage.locator('canvas').screenshot();
@@ -82,13 +96,15 @@ test('keeps native capabilities isolated and Done leaves the pet running',async(
 test('plays selected and random animation rows, then returns to idle',async()=>{
   await settingsPage.getByRole('button',{name:'Import from Codex'}).click();
   await expect(settingsPage.getByRole('button',{name:'Choose Sunny test pet'})).toHaveAttribute('aria-pressed','true');
-  await settingsPage.locator('#animation').selectOption('running');
-  await settingsPage.getByRole('button',{name:'Play',exact:true}).click();
   const pixel=()=>petPage.locator('canvas').evaluate(node=>Array.from(node.getContext('2d').getImageData(192,208,1,1).data));
-  await expect.poll(pixel).toEqual([90,40,200,255]);
   await expect.poll(pixel).toEqual([25,160,210,255]);
   await petPage.clock.install();
   await petPage.clock.pauseAt(await petPage.evaluate(()=>new Date(Date.now()+100).toISOString()));
+  await settingsPage.locator('#animation').selectOption('running');
+  await settingsPage.getByRole('button',{name:'Play',exact:true}).click();
+  await expect.poll(pixel).toEqual([90,40,200,255]);
+  await petPage.clock.runFor(821);
+  await expect.poll(pixel).toEqual([25,160,210,255]);
   await petPage.evaluate(()=>{Math.random=()=>0;});
   await settingsPage.locator('#behaviour').selectOption('quiet');
   await settingsPage.locator('#behaviour').selectOption('playful');
