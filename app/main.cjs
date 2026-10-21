@@ -81,6 +81,7 @@ function configureFullscreen() {
 }
 function applySettings(reflow=false) {
   if(quitting||!desktop)return;
+  if(!settings.features.roaming&&areaWindow&&!areaWindow.isDestroyed())areaWindow.close();
   desktop.apply(reflow);configureShortcut();configureFullscreen();updateApplicationMenu();broadcast();
 }
 function toggleVisible() {
@@ -277,12 +278,14 @@ function configureIPC() {
   }));
   handler('layouts:remove',settingsOnly,id=>enqueue(async()=>{settings.layouts=settings.layouts.filter(p=>p.id!==id);await library.saveSettings(settings);broadcast();}));
 }
-function showAreaPicker(){
+async function showAreaPicker(){
   if(!settings.features.roaming)return;
   if(areaWindow&&!areaWindow.isDestroyed()){areaWindow.focus();return;}
   const display=screen.getAllDisplays().find(d=>String(d.id)===settings.roamArea?.displayId)||screen.getDisplayMatching(petWindow.getBounds());
-  areaWindow=new BrowserWindow({...display.workArea,frame:false,transparent:true,hasShadow:false,resizable:false,skipTaskbar:true,alwaysOnTop:true,webPreferences:windowOptions()});secure(areaWindow);
-  areaWindow.loadFile(rendererPath('area.html'),{query:{displayId:String(display.id)}});areaWindow.on('closed',()=>areaWindow=null);
+  const win=areaWindow=new BrowserWindow({...display.workArea,frame:false,transparent:true,hasShadow:false,resizable:false,skipTaskbar:true,alwaysOnTop:true,show:false,webPreferences:windowOptions()});secure(win);
+  win.on('closed',()=>{if(areaWindow===win)areaWindow=null;});
+  try{await win.loadFile(rendererPath('area.html'),{query:{displayId:String(display.id)}});}catch(error){if(win.isDestroyed())return;throw error;}
+  if(!quitting&&!win.isDestroyed()){win.show();win.focus();}
 }
 app.on('second-instance', showSettings);
 app.on('activate', () => {if (library) showSettings();});

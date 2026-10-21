@@ -77,7 +77,7 @@ test('discovers real-format Codex pets, deduplicates and persists selection',asy
   const state=await settingsPage.evaluate(()=>window.pedex.getState());
   const response=await application.evaluate(async({net},{url})=>{const r=await net.fetch(url);return {status:r.status,size:(await r.arrayBuffer()).byteLength};},{url:state.pets[1].assetUrl});
   expect(response.status).toBe(200);expect(response.size).toBeGreaterThan(0);
-  const config=JSON.parse(await fs.readFile(path.join(root,'data','settings.json'),'utf8'));expect(config.petId).toBe(state.pets[1].id);
+  await expect.poll(async()=>JSON.parse(await fs.readFile(path.join(root,'data','settings.json'),'utf8')).petId).toBe(state.pets[1].id);
   await settingsPage.getByRole('button',{name:'Choose Miso'}).click();await expect(settingsPage.getByRole('button',{name:'Choose Miso'})).toHaveAttribute('aria-pressed','true');
 });
 test('keeps native capabilities isolated and Done leaves the pet running',async()=>{
@@ -297,6 +297,7 @@ test('short automatic walks move within the display and stop immediately on hide
   });
   await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Petex pet').getBounds().x)).toBeLessThan(start.x-12);
   await settingsPage.locator('#visible').uncheck({force:true});
+  await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Petex pet').isVisible())).toBe(false);
   const hidden=await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Petex pet').getBounds());
   await petPage.clock.install();await petPage.clock.runFor(2000);
   expect(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Petex pet').getBounds().x)).toBe(hidden.x);
@@ -411,13 +412,16 @@ test('a user-drawn roaming area constrains movement and can be turned off',async
   await extras({roaming:true});await settingsPage.evaluate(()=>window.pedex.chooseArea());
   await expect.poll(()=>application.windows().some(p=>new URL(p.url()).pathname.endsWith('area.html'))).toBe(true);
   const area=application.windows().find(p=>new URL(p.url()).pathname.endsWith('area.html'));
+  await area.waitForLoadState('load');await expect(area.getByRole('button',{name:'Cancel',exact:true})).toBeVisible();
   await area.mouse.move(80,140);await area.mouse.down();await area.mouse.move(500,490);await area.mouse.up();
   await expect(area.locator('#save')).toBeEnabled();await area.locator('#save').click({noWaitAfter:true}).catch(e=>{if(!area.isClosed())throw e;});
   await expect.poll(async()=>(await readState()).settings.roamArea?.rect?.width||0).toBeGreaterThan(0);
   const state=await readState(),display=state.displays.find(d=>d.id===state.settings.roamArea.displayId),r=state.settings.roamArea.rect,b=state.instances[0].bounds;
   expect(b.x).toBeGreaterThanOrEqual(Math.floor(display.workArea.x+display.workArea.width*r.x));expect(b.y).toBeGreaterThanOrEqual(Math.floor(display.workArea.y+display.workArea.height*r.y));
   expect(b.x+b.width).toBeLessThanOrEqual(Math.ceil(display.workArea.x+display.workArea.width*(r.x+r.width))+1);
+  await settingsPage.evaluate(()=>window.pedex.chooseArea());
   await extras({});expect((await readState()).settings.features.roaming).toBe(false);
+  await expect.poll(()=>application.windows().some(p=>new URL(p.url()).pathname.endsWith('area.html'))).toBe(false);
 });
 test('library tools search, favourite and rename locally without adding permanent clutter',async()=>{
   await settingsPage.getByRole('button',{name:'Import from Codex'}).click();await expect(settingsPage.locator('h1')).toHaveText('Sunny test pet');
@@ -434,6 +438,6 @@ test('saved layouts restore the pet group and preferences, and can be deleted',a
   await settingsPage.evaluate(()=>window.pedex.saveLayout('Desk'));const layout=(await readState()).settings.layouts[0];expect(layout.name).toBe('Desk');
   await settingsPage.evaluate(id=>window.pedex.removeCompanion(id),id);await settingsPage.evaluate(()=>window.pedex.updateSettings({size:240}));
   await settingsPage.evaluate(id=>window.pedex.restoreLayout(id),layout.id);
-  await expect.poll(async()=>(await readState()).instances.length).toBe(2);const restored=await readState();expect(restored.settings.size).toBe(72);expect(restored.instances.find(p=>p.id===id).size).toBe(96);expect(restored.instances.find(p=>p.id===id).behaviour).toBe('quiet');
+  await expect.poll(async()=>(await readState()).instances.filter(p=>p.active).length).toBe(2);const restored=await readState();expect(restored.settings.size).toBe(72);expect(restored.instances.find(p=>p.id===id).size).toBe(96);expect(restored.instances.find(p=>p.id===id).behaviour).toBe('quiet');
   await settingsPage.evaluate(id=>window.pedex.removeLayout(id),layout.id);expect((await readState()).settings.layouts).toHaveLength(0);
 });
