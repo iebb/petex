@@ -80,8 +80,21 @@ class DesktopPets {
       if(!this.active(p)){if(p.walking||p.drag)this.remember(p);p.walking=null;p.drag=null;p.win.hide();}
       else if(!p.win.isVisible())p.win.showInactive();
     }
+    if(this.social&&this.social.ids.some(id=>!this.active(this.instances.get(id))))this.cancelSocial();
+    if(this.toy&&!this.active(this.instances.get(this.toy.hostId)))this.closeToy();
     if(!this.getState().screenAwake||!this.getState().settings.visible){this.cancelSocial();this.closeToy();}
     this.schedule();this.onChange();
+  }
+  constrain() {
+    if(this.disposed)return;
+    const now=performance.now();
+    for(const p of this.instances.values()){
+      const bounds=p.win.getBounds(),area=this.area(p),position=clamp(bounds,area);
+      if(position.x!==bounds.x||position.y!==bounds.y)p.win.setPosition(position.x,position.y);
+      if(p.walking){const walk=p.walking;p.walking={origin:{...bounds,...position},target:clamp({...bounds,...walk.target},area),started:now,duration:Math.max(1,walk.duration-(now-walk.started))};}
+      this.remember(p,false);
+    }
+    this.refresh();this.onSave();
   }
   schedule() {
     if(this.disposed){clearInterval(this.timer);this.timer=null;this.interval=0;return;}

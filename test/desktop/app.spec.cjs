@@ -275,7 +275,12 @@ test('paused and locked pets stop drawing; unlocking preserves the user show/hid
 test('short automatic walks move within the display and stop immediately on hide',async()=>{
   const start=await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Petex pet').getBounds());
   await petPage.evaluate(()=>window.pedex.wander('running-left',1000));
-  await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Petex pet').getBounds().x)).toBeLessThan(start.x);
+  await application.evaluate(({screen})=>{
+    const shrink=d=>({...d,workArea:{...d.workArea,height:d.workArea.height-8}}),all=screen.getAllDisplays.bind(screen),matching=screen.getDisplayMatching.bind(screen);
+    screen.getAllDisplays=()=>all().map(shrink);screen.getDisplayMatching=bounds=>shrink(matching(bounds));
+    screen.emit('display-metrics-changed',{},screen.getPrimaryDisplay(),['workArea']);
+  });
+  await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Petex pet').getBounds().x)).toBeLessThan(start.x-12);
   await settingsPage.locator('#visible').uncheck({force:true});
   const hidden=await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Petex pet').getBounds());
   await petPage.clock.install();await petPage.clock.runFor(2000);
@@ -365,10 +370,12 @@ test('social greetings are opt-in, coordinate both pets, and stop when disabled'
 });
 test('a toy appears only when requested and disappears when animations pause',async()=>{
   expect(await settingsPage.evaluate(()=>window.pedex.throwBall())).toBe(false);
-  await extras({toys:true});expect(application.windows().some(p=>p.url().endsWith('toy.html'))).toBe(false);
+  await extras({toys:true,multiPet:true});expect(application.windows().some(p=>p.url().endsWith('toy.html'))).toBe(false);
   expect(await settingsPage.evaluate(()=>window.pedex.throwBall())).toBe(true);
   await expect.poll(()=>application.windows().some(p=>p.url().endsWith('toy.html'))).toBe(true);
   const toy=application.windows().find(p=>p.url().endsWith('toy.html'));await expect.poll(()=>toy.locator('canvas').evaluate(n=>n.getContext('2d').getImageData(32,32,1,1).data[3])).toBe(255);
+  await settingsPage.evaluate(()=>window.pedex.updateSettings({primaryVisible:false}));await expect.poll(()=>application.windows().some(p=>p.url().endsWith('toy.html'))).toBe(false);
+  await settingsPage.evaluate(()=>window.pedex.updateSettings({primaryVisible:true}));expect(await settingsPage.evaluate(()=>window.pedex.throwBall())).toBe(true);
   await settingsPage.evaluate(()=>window.pedex.updateSettings({motion:false}));await expect.poll(()=>application.windows().some(p=>p.url().endsWith('toy.html'))).toBe(false);
 });
 test('Shift strokes are optional, leave dragging intact and have a cooldown',async()=>{

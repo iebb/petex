@@ -21,6 +21,16 @@ let library, settings, pets = [], petWindow, settingsWindow, areaWindow, desktop
 let queue = Promise.resolve();
 let screenAwake=true, fullscreenHidden=false, fullscreenMonitor, fullscreenTimer=null, shortcutAvailable=false, shortcutEnabled=null,activityReady=false,fullscreenQuery=null,fullscreenIndex=0;
 const fullscreenDisplays=new Set();
+let displayGeometry;
+const geometry=()=>screen.getAllDisplays().map(d=>({id:d.id,bounds:d.bounds,workArea:d.workArea,scaleFactor:d.scaleFactor,rotation:d.rotation})).sort((a,b)=>a.id-b.id);
+function displaysChanged(){
+  if(quitting)return;
+  const next=geometry();if(JSON.stringify(next)===JSON.stringify(displayGeometry))return;
+  const structural=value=>value.map(({workArea,...rest})=>rest);
+  const workAreaOnly=displayGeometry&&JSON.stringify(structural(next))===JSON.stringify(structural(displayGeometry));
+  displayGeometry=next;
+  if(workAreaOnly)desktop.constrain();else applySettings(true);
+}
 const SHORTCUT='CommandOrControl+Shift+P';
 const locale=()=>resolveLocale(settings?.language==='auto'?app.getLocale():settings?.language);
 const t=(key,values)=>translate(locale(),key,values);
@@ -326,8 +336,9 @@ if (locked) app.whenReady().then(async () => {
   if (process.platform === 'darwin') app.dock.hide();
   updateApplicationMenu();desktop.schedule();
   if(fullscreenMonitor.available)checkFullscreen(true);
-  screen.on('display-removed',()=>applySettings(true));
-  screen.on('display-added',()=>applySettings(true));
-  screen.on('display-metrics-changed',()=>applySettings(true));
+  displayGeometry=geometry();
+  screen.on('display-removed',displaysChanged);
+  screen.on('display-added',displaysChanged);
+  screen.on('display-metrics-changed',displaysChanged);
   if (!process.argv.includes('--hidden') && !app.getLoginItemSettings().wasOpenedAtLogin) showSettings();
 }).catch(error => {dialog.showErrorBox(t('startError'),errorText(error)); app.quit();});
