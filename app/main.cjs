@@ -63,7 +63,11 @@ function checkFullscreen(initial=false) {
 function configureFullscreen() {
   clearInterval(fullscreenTimer);fullscreenTimer=null;
   if(settings.hideFullscreen&&settings.visible&&screenAwake&&fullscreenMonitor.available){checkFullscreen();fullscreenTimer=setInterval(()=>checkFullscreen(),1500);}
-  else{fullscreenMonitor.stop();fullscreenDisplays.clear();fullscreenHidden=false;}
+  else{
+    fullscreenMonitor.stop();fullscreenDisplays.clear();fullscreenHidden=false;
+    // A display change may interrupt the one-time startup lock check.
+    if(!activityReady&&fullscreenMonitor.available&&!quitting)checkFullscreen(true);
+  }
 }
 function applySettings(reflow=false) {
   if(quitting||!desktop)return;

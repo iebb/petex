@@ -20,6 +20,7 @@ test.beforeEach(async()=>{
   application=await electron.launch({...(process.env.PEDEX_EXECUTABLE ? {executablePath:process.env.PEDEX_EXECUTABLE,args:[]} : {args:[path.join(__dirname,'../..')]}),env:{...process.env,PEDEX_CODEX_APP:codexArchive,PEDEX_DATA_DIR:path.join(root,'data'),PEDEX_CODEX_HOME:path.join(root,'codex')}});
   await expect.poll(async()=>application.windows().map(page=>path.basename(page.url())).sort(),{timeout:20000}).toEqual(['pet.html','settings.html']);
   settingsPage=application.windows().find(p=>p.url().endsWith('settings.html'));petPage=application.windows().find(p=>p.url().endsWith('pet.html'));
+  await application.evaluate(({screen})=>screen.emit('display-metrics-changed',{},screen.getPrimaryDisplay(),['workArea']));
   await expect.poll(()=>settingsPage.evaluate(async()=>(await window.pedex.getState()).activityReady)).toBe(true);
   await application.evaluate(({powerMonitor})=>powerMonitor.emit('unlock-screen'));
   await expect(settingsPage.locator('h1')).toHaveText('Miso');
