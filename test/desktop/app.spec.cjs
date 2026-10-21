@@ -116,8 +116,7 @@ test('plays selected and random animation rows, then returns to idle',async()=>{
   await settingsPage.locator('#behaviour').selectOption('quiet');
   await petPage.clock.fastForward(60000);
   await expect.poll(pixel).toEqual([25,160,210,255]);
-  const config=JSON.parse(await fs.readFile(path.join(root,'data','settings.json'),'utf8'));
-  expect(config.randomAnimations).toBe(false);
+  await expect.poll(async()=>JSON.parse(await fs.readFile(path.join(root,'data','settings.json'),'utf8')).randomAnimations).toBe(false);
 });
 
 async function preparePointerTest(){
