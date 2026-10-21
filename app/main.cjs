@@ -35,6 +35,7 @@ function snapshot(win) {
   return {settings:instance?desktop.config(instance):settings,pets,instanceId:instance?.id,instances,displays:screen.getAllDisplays().map(d=>({id:String(d.id),name:d.label||String(d.id),workArea:d.workArea})),platform:process.platform,version:app.getVersion(),locale:locale(),petActive:instance?desktop.active(instance):petActive(),screenAwake,activityReady,fullscreenHidden,resting:desktop?.routineResting||false,shortcutAvailable,fullscreenAvailable:!!fullscreenMonitor?.available,codexImports:!process.mas,loginAvailable:app.isPackaged&&!process.env.PEDEX_DATA_DIR};
 }
 function broadcast() {
+  if(quitting)return;
   for(const win of [...(desktop?.windows||[]),settingsWindow,areaWindow])if(win&&!win.isDestroyed())win.webContents.send('state:changed',snapshot(win));
   updateTray();
 }
@@ -78,6 +79,7 @@ function updateApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'Petex',submenu:[{label:t('settings'),accelerator:'CommandOrControl+,',click:showSettings},{label:t('quit'),accelerator:'CommandOrControl+Q',click:()=>app.quit()}]},{label:t('edit'),submenu:[{role:'undo',label:t('undo')},{role:'redo',label:t('redo')},{type:'separator'},{role:'cut',label:t('cut')},{role:'copy',label:t('copy')},{role:'paste',label:t('paste')},{role:'selectAll',label:t('selectAll')}]}]));
 }
 function showSettings() {
+  if(quitting)return;
   if (settingsWindow && !settingsWindow.isDestroyed()) { settingsWindow.show(); settingsWindow.focus(); return; }
   settingsWindow = new BrowserWindow({width: 700, height: 740, minWidth: 600, minHeight: 660, title: 'Petex', backgroundColor: '#f7f8f2', titleBarStyle: 'hidden', ...(process.platform === 'darwin' ? {trafficLightPosition: {x: 20, y: 21}} : {titleBarOverlay: {color: '#f7f8f2', symbolColor: '#354330', height: 42}}), autoHideMenuBar: true, show: false, webPreferences: windowOptions()});
   secure(settingsWindow);
@@ -230,7 +232,7 @@ function configureIPC() {
   handler('pet:stroke',petWindows,function(){return desktop.petting(desktop.fromWindow(this));});
   handler('companions:add',settingsOnly,id=>enqueue(async()=>{
     if(!settings.features.multiPet||settings.companions.length>=MAX_PETS-1||!pets.some(p=>p.id===id))throw Object.assign(new Error(),{key:'petLimit'});
-    settings.companions.push(newCompanion(id,settings));applySettings();await library.saveSettings(settings);return snapshot();
+    const companion=newCompanion(id,settings);settings.companions.push(companion);applySettings();await desktop.instances.get(companion.id).ready;await library.saveSettings(settings);return snapshot();
   }));
   handler('companions:remove',settingsOnly,id=>enqueue(async()=>{settings.companions=settings.companions.filter(c=>c.id!==id);delete settings.placements[id];applySettings();await library.saveSettings(settings);}));
   handler('companions:update',settingsOnly,(id,patch)=>enqueue(async()=>{

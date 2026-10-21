@@ -118,8 +118,8 @@ function renderExtras(){
   const {settings,pets}=state,f=settings.features;
   for(const key of featureKeys)$('feature-'+key).checked=f[key];
   for(const [panel,feature] of [['companions-panel','multiPet'],['roaming-panel','roaming'],['toys-panel','toys'],['petting-hint','petting'],['routines-panel','routines'],['layouts-panel','layouts'],['library-tools','libraryTools']])$(panel).hidden=!f[feature];
-  $('interact-now').hidden=!f.interactions;$('interact-now').disabled=!settings.motion||!settings.visible||!settings.companions.some(c=>c.visible);
-  $('throw-ball').disabled=!settings.motion||!settings.visible;
+  $('interact-now').hidden=!f.interactions;$('interact-now').disabled=!settings.motion||state.instances.filter(p=>p.active&&p.behaviour!=='quiet').length<2;
+  $('throw-ball').disabled=!settings.motion||!state.instances.some(p=>p.active);
   $('extras-off').disabled=!Object.values(f).some(Boolean);
   const key=JSON.stringify([state.locale,pets.map(p=>[p.id,p.displayName]),settings.petId,settings.primaryVisible,f.personalities,settings.companions.map(c=>[c.id,c.petId,c.size,c.behaviour,c.visible,c.followCursor])]);
   if(key!==companionKey){

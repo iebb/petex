@@ -22,17 +22,18 @@ class DesktopPets {
     return {...settings,...custom,petId:item.petId||'miso',position:item.position,visible:settings.visible&&item.visible!==false,...(this.routineResting?{behaviour:'quiet',randomAnimations:false}:{})};
   }
   active(p) {
+    if(!p||!p.loaded||p.win.isDestroyed())return false;
     const state=this.getState(),config=this.config(p);
     const hidden=state.fullscreenDisplays?.has(String(screen.getDisplayMatching(p.win.getBounds()).id))||false;
     return config.visible&&state.screenAwake&&!(config.hideFullscreen&&hidden);
   }
   create(id) {
-    const p={id,drag:null,walking:null,busyUntil:0,lastCursor:null,lastPetting:-Infinity,activity:null};
+    const p={id,loaded:false,drag:null,walking:null,busyUntil:0,lastCursor:null,lastPetting:-Infinity,activity:null};
     const config=this.config(p),width=config.size+32,height=Math.ceil(config.size*208/192)+32;
     p.win=new BrowserWindow({width,height,frame:false,transparent:true,backgroundColor:'#00000000',hasShadow:false,resizable:false,maximizable:false,minimizable:false,fullscreenable:false,skipTaskbar:true,show:false,title:id==='primary'?'Petex pet':`Petex pet · ${id}`,webPreferences:this.windowOptions()});
     this.secure(p.win);p.win.setIgnoreMouseEvents(true,{forward:true});this.instances.set(id,p);
     p.win.on('close',e=>{if(!this.disposed){e.preventDefault();this.hide(p);}});
-    p.ready=p.win.loadFile(path.join(__dirname,'renderer','pet.html')).then(()=>{if(!p.win.isDestroyed()){this.place(p);this.refresh();}});
+    p.ready=p.win.loadFile(path.join(__dirname,'renderer','pet.html')).then(()=>{if(!this.disposed&&!p.win.isDestroyed()){p.loaded=true;this.place(p);this.refresh();}});
     return p;
   }
   area(p) {
@@ -73,6 +74,7 @@ class DesktopPets {
     this.refresh();
   }
   refresh() {
+    if(this.disposed)return;
     for(const p of this.instances.values()){
       if(!this.active(p)){if(p.walking||p.drag)this.remember(p);p.walking=null;p.drag=null;p.win.hide();}
       else if(!p.win.isVisible())p.win.showInactive();
@@ -81,6 +83,7 @@ class DesktopPets {
     this.schedule();this.onChange();
   }
   schedule() {
+    if(this.disposed){clearInterval(this.timer);this.timer=null;this.interval=0;return;}
     const active=[...this.instances.values()].filter(p=>this.active(p));
     const interval=!active.length?0:active.some(p=>p.drag)?16:active.some(p=>p.walking)||this.toy?33:active.some(p=>this.config(p).motion)?50:120;
     if(interval===this.interval)return;clearInterval(this.timer);this.interval=interval;this.timer=interval?setInterval(()=>this.tick(),interval):null;
@@ -179,6 +182,9 @@ class DesktopPets {
     if(!toy.drag&&now>=toy.nextChase){toy.nextChase=now+2000;for(const p of this.instances.values()){const config=this.config(p);if(!this.active(p)||p.drag||p.walking||config.behaviour==='quiet'||this.routineResting)continue;const b=p.win.getBounds(),target=clamp({...b,x:toy.x-b.width/2+16,y:toy.y-b.height+20},this.area(p));if(Math.hypot(b.x-target.x,b.y-target.y)<50)this.action(p,'jumping');else this.move(p,target,1600,target.x>=b.x?'running-right':'running-left');}}
   }
   closeToy(){if(this.toy){const win=this.toy.win;this.toy=null;if(!win.isDestroyed())win.destroy();}this.schedule();}
-  dispose(){this.disposed=true;clearInterval(this.timer);this.closeToy();for(const p of this.instances.values())p.win.destroy();this.instances.clear();clearInterval(this.timer);}
+  dispose(){
+    this.disposed=true;clearInterval(this.timer);this.timer=null;this.interval=0;this.social=null;this.toy=null;
+    // Stop activity here; app.quit owns the native window close sequence.
+  }
 }
 module.exports={DesktopPets};

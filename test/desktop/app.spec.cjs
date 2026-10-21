@@ -353,6 +353,7 @@ test('dragging a second pet moves only that instance and keeps its IPC isolated'
 });
 test('social greetings are opt-in, coordinate both pets, and stop when disabled',async()=>{
   await extras({multiPet:true});await addMiso();expect(await settingsPage.evaluate(()=>window.pedex.interact())).toBe(false);
+  expect((await readState()).instances.every(p=>p.active)).toBe(true);
   await extras({multiPet:true,interactions:true});
   await expect.poll(()=>application.windows().filter(p=>p.url().endsWith('pet.html')).length).toBe(2);
   const pages=application.windows().filter(p=>p.url().endsWith('pet.html'));
